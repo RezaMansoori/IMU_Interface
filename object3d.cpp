@@ -199,7 +199,7 @@ void Object3D::initializeGL()
     glClearColor(35.0f / 255.0f, 37.0f / 255.0f, 38.0f / 255.0f, 1.0f);
     glEnable(GL_DEPTH_TEST);
 
-    loadOBJ("C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/build/Desktop_Qt_6_9_2_MSVC_64_bit-Release/icons/imu-model.obj");
+    loadOBJ("imu-model.obj");
     createAxes();
 
     modelProgram = new QOpenGLShaderProgram(this);

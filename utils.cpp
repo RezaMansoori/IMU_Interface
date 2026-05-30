@@ -43,6 +43,29 @@ std::vector<QVector3D> computeNormals(const std::vector<float>& vertices,
     return normals;
 }
 
+// std::array<double, 3> rotm2eul_XYZ(const double R[3][3]) {
+//     double x, y, z;
+
+//     if (std::abs(R[0][2]) < 1.0 - 1e-12) {
+//         y = std::asin(R[0][2]);
+//         x = std::atan2(-R[1][2], R[2][2]);
+//         z = std::atan2(-R[0][1], R[0][0]);
+//     } else {
+//         y = (R[0][2] > 0 ? M_PI/2 : -M_PI/2);
+//         x = std::atan2(R[1][0], R[1][1]);
+//         z = 0;
+//     }
+
+//     return { x * 180.0 / M_PI,
+//             y * 180.0 / M_PI,
+//             z * 180.0 / M_PI };
+// }
+
+#include <array>
+#include <cmath>
+#include <algorithm>
+
+// XYZ (original)
 std::array<double, 3> rotm2eul_XYZ(const double R[3][3]) {
     double x, y, z;
 
@@ -56,9 +79,93 @@ std::array<double, 3> rotm2eul_XYZ(const double R[3][3]) {
         z = 0;
     }
 
-    return { x * 180.0 / M_PI,
-            y * 180.0 / M_PI,
-            z * 180.0 / M_PI };
+    return { x * 180.0 / M_PI, y * 180.0 / M_PI, z * 180.0 / M_PI };
+}
+
+// ZYX (intrinsic rotations: Z, then Y', then X'')
+// Equivalent to extrinsic XYZ but with different indexing
+std::array<double, 3> rotm2eul_ZYX(const double R[3][3]) {
+    double x, y, z;
+
+    if (std::abs(R[2][0]) < 1.0 - 1e-12) {
+        y = std::asin(-R[2][0]);
+        x = std::atan2(R[2][1], R[2][2]);
+        z = std::atan2(R[1][0], R[0][0]);
+    } else {
+        y = (R[2][0] < 0 ? M_PI/2 : -M_PI/2);
+        x = std::atan2(-R[1][2], R[1][1]);
+        z = 0;
+    }
+
+    return { x * 180.0 / M_PI, y * 180.0 / M_PI, z * 180.0 / M_PI };
+}
+
+// XZY (intrinsic rotations: X, then Z', then Y'')
+std::array<double, 3> rotm2eul_XZY(const double R[3][3]) {
+    double x, y, z;
+
+    if (std::abs(R[0][1]) < 1.0 - 1e-12) {
+        z = std::asin(-R[0][1]);
+        x = std::atan2(R[2][1], R[1][1]);
+        y = std::atan2(R[0][2], R[0][0]);
+    } else {
+        z = (R[0][1] < 0 ? M_PI/2 : -M_PI/2);
+        x = std::atan2(-R[2][0], R[2][2]);
+        y = 0;
+    }
+
+    return { x * 180.0 / M_PI, y * 180.0 / M_PI, z * 180.0 / M_PI };
+}
+
+// YZX (intrinsic rotations: Y, then Z', then X'')
+std::array<double, 3> rotm2eul_YZX(const double R[3][3]) {
+    double x, y, z;
+
+    if (std::abs(R[1][2]) < 1.0 - 1e-12) {
+        x = std::asin(-R[1][2]);
+        y = std::atan2(R[0][2], R[2][2]);
+        z = std::atan2(R[1][0], R[1][1]);
+    } else {
+        x = (R[1][2] < 0 ? M_PI/2 : -M_PI/2);
+        y = std::atan2(-R[0][1], R[0][0]);
+        z = 0;
+    }
+
+    return { x * 180.0 / M_PI, y * 180.0 / M_PI, z * 180.0 / M_PI };
+}
+
+// YXZ (intrinsic rotations: Y, then X', then Z'')
+std::array<double, 3> rotm2eul_YXZ(const double R[3][3]) {
+    double x, y, z;
+
+    if (std::abs(R[1][0]) < 1.0 - 1e-12) {
+        z = std::asin(-R[1][0]);
+        y = std::atan2(R[2][0], R[0][0]);
+        x = std::atan2(R[1][2], R[1][1]);
+    } else {
+        z = (R[1][0] < 0 ? M_PI/2 : -M_PI/2);
+        y = std::atan2(-R[2][1], R[2][2]);
+        x = 0;
+    }
+
+    return { x * 180.0 / M_PI, y * 180.0 / M_PI, z * 180.0 / M_PI };
+}
+
+// ZXY (intrinsic rotations: Z, then X', then Y'')
+std::array<double, 3> rotm2eul_ZXY(const double R[3][3]) {
+    double x, y, z;
+
+    if (std::abs(R[2][1]) < 1.0 - 1e-12) {
+        x = std::asin(-R[2][1]);
+        z = std::atan2(R[0][1], R[1][1]);
+        y = std::atan2(R[2][0], R[2][2]);
+    } else {
+        x = (R[2][1] < 0 ? M_PI/2 : -M_PI/2);
+        z = std::atan2(-R[0][2], R[0][0]);
+        y = 0;
+    }
+
+    return { x * 180.0 / M_PI, y * 180.0 / M_PI, z * 180.0 / M_PI };
 }
 
 torch::Tensor npzToTensor(const cnpy::NpyArray& arr, torch::ScalarType dtype) {

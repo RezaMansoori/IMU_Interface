@@ -52,6 +52,13 @@ public slots:
     void calibratePelvis(const IMU &data);
 
 private:
+    QStringList newSettings;
+    QMap<QString, QString> displayToInternal;
+    QComboBox *comboRegion = nullptr;      // همان regionComboBox
+    QGridLayout *settingsGrid = nullptr;
+    QComboBox *regionComboBox = nullptr;
+    void updateSettingsGrid(QGridLayout *grid, const QStringList &settingsList);
+    void updateJointList(const QString &region);
     void clearLeft();
     void buildLeftFrame(const QString &title, const QList<QWidget*> &bodyWidgets, const QList<QPushButton*> &buttons);
     void buildRight3DView();

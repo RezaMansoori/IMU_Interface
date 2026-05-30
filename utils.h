@@ -18,7 +18,19 @@
 Eigen::MatrixXf loadMatrix(const std::string& path);
 std::vector<QVector3D> computeNormals(const std::vector<float>& vertices,
                                       const std::vector<int>& faces);
+// std::array<double, 3> rotm2eul_XYZ(const double R[3][3]);
+#ifndef ROTM2EUL_H
+#define ROTM2EUL_H
+
+#include <array>
 std::array<double, 3> rotm2eul_XYZ(const double R[3][3]);
+std::array<double, 3> rotm2eul_ZYX(const double R[3][3]);
+std::array<double, 3> rotm2eul_XZY(const double R[3][3]);
+std::array<double, 3> rotm2eul_YZX(const double R[3][3]);
+std::array<double, 3> rotm2eul_YXZ(const double R[3][3]);
+std::array<double, 3> rotm2eul_ZXY(const double R[3][3]);
+
+#endif // ROTM2EUL_H
 torch::Tensor npzToTensor(const cnpy::NpyArray& arr, torch::ScalarType dtype);
 Eigen::MatrixXd loadEulerCsv(const std::string& path);
 torch::Tensor eulerToRotMatrix(double roll, double pitch, double yaw);

@@ -123,6 +123,9 @@ void USBReceiver::run()
                 ds.device()->seek(0);
                 ds >> temp;
                 if (validateData(temp)) {
+                    temp.hostEmitTimeUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
                     emit data(temp);
                     if (m_isRecording) {
                         m_recorder->addData(temp);
@@ -150,7 +153,7 @@ void USBReceiver::run()
             retry_count = 0;
         }
 
-        msleep(DEFAULT_INTERVAL_MS);
+        msleep(1);
     }
 
     if (m_port) {

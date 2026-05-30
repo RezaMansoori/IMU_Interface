@@ -30,6 +30,7 @@ class ImGuiPlot : public QOpenGLWidget, protected QOpenGLExtraFunctions {
   int plotCount() const { return m_plotCount; }
   void setJointNum(int num);
 
+
  protected:
   void initializeGL() override;
   void paintGL() override;
@@ -54,6 +55,7 @@ class ImGuiPlot : public QOpenGLWidget, protected QOpenGLExtraFunctions {
   float mouse_wheelH;  // mouse horizontal wheel
 
   int m_plotCount = 4;
+  int joint_num;
 };
 
 #endif  // IMGUIPLOT_H

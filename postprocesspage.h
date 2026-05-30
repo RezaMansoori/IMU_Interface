@@ -20,6 +20,8 @@
 #include <cmath>
 #include <algorithm>
 #include <numeric>
+#include <QRadioButton>
+#include <QButtonGroup>
 
 class PostProcessPage : public QWidget {
     Q_OBJECT
@@ -43,6 +45,7 @@ private slots:
     void updateCutoff(int value); // New slot for cutoff slider
     void updateOrder(int value); // New slot for order slider
     void undoFilter(); // New slot for undoing filter
+    void onModeChanged();
 
 private:
     std::vector<double> applyButterworthFilter(const std::vector<double>& signal, double cutoff, int order, double fs, bool highpass);
@@ -81,6 +84,10 @@ private:
     double fs; // sampling frequency
     std::map<QString, int> paramMap;
 
+    enum XYMetric { Roll=0, Pitch=1, Yaw=2 };
+    XYMetric currentXYMetric() const { return static_cast<XYMetric>(angleCombo->currentIndex()); }
+    bool xyMode() const { return xyRadio && xyRadio->isChecked(); }
+
     bool isTrimming;
     QRectF trimRect;
     QPointF trimStartPoint;
@@ -100,6 +107,35 @@ private:
     QLineSeries *movingAverageSeries;
     std::vector<double> movingAverageValues; // برای ذخیره داده‌های میانگین متحرک
 
+    std::vector<double> filteredValues; // برای ذخیره داده‌های فیلترشده (فقط Time mode)
+
+    // UI for modes
+    QButtonGroup *modeGroup;
+    QRadioButton *timeRadio;
+    QRadioButton *xyRadio;
+    QWidget *timeSelectWidget;
+    QWidget *xySelectWidget;
+
+    // UI for XY mode
+    QComboBox *jointXCombo;
+    QComboBox *jointYCombo;
+    QComboBox *angleCombo;
+    QPushButton *applyXYBtn;
+    QStringList jointNames;
+
+    // Series for XY
+    QLineSeries *xySeries;
+    QLineSeries *xyFilteredSeries;
+    QLineSeries *xyMovingSeries;
+
+    // Data for XY
+    std::vector<double> angleX;
+    std::vector<double> angleY;
+    std::vector<double> filteredY;
+    std::vector<double> movingY;
+    std::vector<double> angleXBackup;
+    std::vector<double> angleYBackup;
+
     // اسلات‌های جدید
     void toggleMovingAverageFrame();
     void applyMovingAverage();
@@ -108,6 +144,10 @@ private:
 
     // متد جدید برای محاسبه میانگین متحرک
     std::vector<double> calculateMovingAverage(const std::vector<double>& signal, int windowSize);
+
+    void loadXYData(int jointXIdx, int jointYIdx, XYMetric metric);
+    QString getAngleName(XYMetric metric) const;
+    void updateXYPlot();
 };
 
 #endif // POSTPROCESSPAGE_H

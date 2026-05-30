@@ -28,6 +28,7 @@ public:
     float quat[4];
     float lacc[3];
     qint64 time;
+    qint64 hostEmitTimeUs;
     qint8 battery;
 };
 

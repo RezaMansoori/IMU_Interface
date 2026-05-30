@@ -21,8 +21,28 @@ StartPage::StartPage(QWidget *parent, bool isDarkTheme, USBReceiver *usbReceiver
     plotter(nullptr),
     isDarkTheme(isDarkTheme)
 {
+    displayToInternal["Pelvis"]        = "Pelvis";
+    displayToInternal["Back"]          = "Back";
+    displayToInternal["Head"]          = "Head";
+
+    displayToInternal["Right Arm"]     = "ArmR";
+    displayToInternal["Right forearm"] = "ForearmR";
+    displayToInternal["Left Arm"]     = "ArmL";
+    displayToInternal["Left forearm"] = "ForearmL";
+
+    displayToInternal["Right Hand"]    = "HandR";
+    displayToInternal["Left Hand"]    = "HandL";
+
+    displayToInternal["Right Foot"]    = "FootR";
+    displayToInternal["Left Foot"]    = "FootL";
+
+    displayToInternal["Right Thigh"]   = "ThighR";
+    displayToInternal["Right Shank"]   = "ShankR";
+    displayToInternal["Left Thigh"]   = "ThighL";
+    displayToInternal["Left Shank"]   = "ShankL";
+
     // Initialize settings
-    settings = {"Pelvis", "Left Knee", "Right Knee", "Head", "Left Hand", "Right Hand"};
+    settings = {"Pelvis", "Right Arm", "Head", "Back", "Right Hand", "Right forearm", "Right Shank", "Right Tight"};
     for (const QString &setting : settings) {
         comboValues[setting] = "1";
     }
@@ -142,39 +162,165 @@ void StartPage::buildLeftFrame(const QString &title, const QList<QWidget*> &body
 
 void StartPage::showStep1()
 {
-    QGridLayout *grid = new QGridLayout();
-    combos.clear();
+    // اگر اولین بار وارد شویم:
+    if (!comboRegion) {
+        comboRegion = new QComboBox();
+        comboRegion->addItem("Full Body");
+        comboRegion->addItem("Half Body");
+        comboRegion->addItem("Upper Body");
+        comboRegion->addItem("Lower Body");
 
-    int i = 0;
-    for (const QString &setting : settings) {
-        QLabel *lbl = new QLabel(setting);
-        lbl->setStyleSheet(isDarkTheme ?
-                               "font: 16px 'Segoe UI'; color: #f8f8f8;" :
-                               "font: 16px 'Segoe UI'; color: black;");
-
-        QComboBox *cb = new QComboBox();
-        cb->setStyleSheet(isDarkTheme ?
-                              "background: #3e3e4e; color: #43cea2; border-radius: 8px; font: 15px 'Segoe UI';" :
-                              "QComboBox { background: #e0e0e0; color: black; border: 1px solid #333; border-radius: 8px; font: 15px 'Segoe UI'; }"
-                              "QComboBox QAbstractItemView { background: #ffffff; color: black; selection-background-color: #c0c0c0; }");
-        for (int n = 1; n <= numImus; ++n) {
-            cb->addItem(QString::number(n));
-        }
-        cb->setCurrentText(comboValues.value(setting, "1"));
-        combos[setting] = cb;
-
-        grid->addWidget(lbl, i, 0);
-        grid->addWidget(cb, i, 1);
-        ++i;
+        comboRegion->setMinimumWidth(140);
+        comboRegion->setStyleSheet(
+            "QComboBox { background:#000; color:#fff; border:1px solid #555; border-radius:6px; padding:4px; }"
+            "QComboBox QAbstractItemView { background:#000; color:#fff; }"
+            );
     }
 
-    QWidget *wrapper = new QWidget();
-    wrapper->setLayout(grid);
+    // ساخت لیبل region
+    QLabel *regionLabel = new QLabel("Body Region:");
+    regionLabel->setStyleSheet(
+        isDarkTheme ?
+            "font: 16px 'Segoe UI'; color:#f8f8f8;" :
+            "font: 16px 'Segoe UI'; color:black;"
+        );
 
+    // ساخت گرید تنظیمات فقط یک بار
+    if (!settingsGrid) {
+        settingsGrid = new QGridLayout();
+    }
+
+    // ایجاد wrapper
+    QWidget *wrapper = new QWidget();
+    QVBoxLayout *outer = new QVBoxLayout(wrapper);
+
+    // ردیف region
+    QHBoxLayout *rowRegion = new QHBoxLayout();
+    rowRegion->addWidget(regionLabel);
+    rowRegion->addWidget(comboRegion);
+    rowRegion->addStretch();
+    outer->addLayout(rowRegion);
+
+    // گرید لیست تنظیمات
+    QWidget *gridHolder = new QWidget();
+    gridHolder->setLayout(settingsGrid);
+    outer->addWidget(gridHolder);
+
+    // ساخت دکمه Next
     QPushButton *btnNext = new QPushButton("Next ➜");
     connect(btnNext, &QPushButton::clicked, this, &StartPage::saveAndNext);
 
+    QHBoxLayout *btnRow = new QHBoxLayout();
+    btnRow->addStretch();
+    btnRow->addWidget(btnNext);
+    outer->addLayout(btnRow);
+
+    // قرار دادن صفحه در پنل سمت چپ
     buildLeftFrame("Step 1: Assign IMUs", {wrapper}, {btnNext});
+
+    // اتصال سیگنال فقط یکبار
+    static bool connected = false;
+    if (!connected) {
+        connected = true;
+        connect(comboRegion, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, [this]() {
+                    updateJointList(comboRegion->currentText());
+                });
+    }
+
+    // اجرای اولیه — Full Body
+    updateJointList(comboRegion->currentText());
+}
+
+void StartPage::updateJointList(const QString &region)
+{
+    // تنظیم لیست‌ها
+    QStringList halfBodySettings = {
+        "Head", "Pelvis", "Back", "Right Arm",
+        "Right forearm", "Right Hand", "Right Shank", "Right Thigh", "Right Foot"
+    };
+
+    QStringList upperSettings = {
+        "Head", "Pelvis" , "Back", "Right Arm", "Right forearm", "Right Hand", "Left Arm", "Left forearm" ,"Left Hand"
+    };
+
+    QStringList lowerSettings = {
+        "Pelvis", "Right Shank", "Right Thigh", "Right Foot","Left Shank", "Left Thigh", "Left Foot"
+    };
+
+    QStringList fullSettings = {
+        "Head", "Pelvis",  "Back", "Right Arm", "Right forearm", "Right Hand", "Right Shank", "Right Thigh", "Right Foot", "Left Arm", "Left forearm", "Left Hand", "Left Shank", "Left Thigh", "Left Foot"
+    };
+
+    if (region == "Upper Body")
+        newSettings = upperSettings;
+    else if (region == "Lower Body")
+        newSettings = lowerSettings;
+    else if (region == "Full Body")
+        newSettings = fullSettings;
+    else
+        newSettings = halfBodySettings;
+
+    // حفظ انتخاب‌های فعلی
+    for (auto it = combos.begin(); it != combos.end(); ++it) {
+        if (it.value())
+            comboValues[it.key()] = it.value()->currentText();
+    }
+
+    // پاک کردن گرید قبلی
+    while (QLayoutItem *item = settingsGrid->takeAt(0)) {
+        if (item->widget())
+            item->widget()->deleteLater();
+        delete item;
+    }
+
+    combos.clear(); // کامبوهای جدید بعداً اضافه می‌شوند
+
+    // ساخت گرید جدید بر اساس newSettings
+    int row = 0;
+    for (const QString &setting : newSettings) {
+
+        QLabel *lbl = new QLabel(setting);
+        lbl->setStyleSheet(isDarkTheme ?
+                               "font: 16px 'Segoe UI'; color:#f8f8f8;" :
+                               "font: 16px 'Segoe UI'; color:black;");
+
+        QComboBox *cb = new QComboBox();
+
+        for (int n = 1; n <= numImus; ++n)
+            cb->addItem(QString::number(n));
+
+        // بازیابی انتخاب قبلی
+        if (comboValues.contains(setting))
+            cb->setCurrentText(comboValues[setting]);
+
+        combos[setting] = cb;
+
+        // حفظ خودکار انتخاب‌های جدید بعد از تغییر کاربر
+        connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, [this, setting, cb]() {
+                    comboValues[setting] = cb->currentText();
+                });
+
+        settingsGrid->addWidget(lbl, row, 0);
+        settingsGrid->addWidget(cb, row, 1);
+        row++;
+        cb->setStyleSheet(
+            "QComboBox {"
+            "    background-color: #000000;"
+            "    color: #ffffff;"
+            "    border: 1px solid #555;"
+            "    border-radius: 6px;"
+            "    padding: 4px;"
+            "}"
+            "QComboBox QAbstractItemView {"
+            "    background-color: #000000;"
+            "    color: #ffffff;"
+            "    selection-background-color: #333333;"
+            "}"
+            );
+    }
+
 }
 
 void StartPage::showStep2()
@@ -189,7 +335,7 @@ void StartPage::showStep2()
 
     QVBoxLayout *imuListLayout = new QVBoxLayout();
     QMap<QString, QLabel*> imuLabels;
-    for (const QString &setting : settings) {
+    for (const QString &setting : newSettings) {
         QString imuIdStr = comboValues[setting];
         QLabel *imuLabel = new QLabel(QString("%1: IMU %2").arg(setting).arg(imuIdStr));
         imuLabel->setStyleSheet(isDarkTheme ? "font: 16px 'Segoe UI'; color: #43cea2;" : "font: 16px 'Segoe UI'; color: #333;");
@@ -210,12 +356,14 @@ void StartPage::showStep2()
     QMap<int, QString> jointIndexToSetting;
     // Indices are based on the jointPointsPercent in BodyWidget, which are
     // mapped from the original pixel points.
-    jointIndexToSetting[15] = "Head"; // Head
-    jointIndexToSetting[0] = "Pelvis"; // Pelvis
-    jointIndexToSetting[18] = "Left Hand"; // Elbow Left
-    jointIndexToSetting[19] = "Right Hand"; // Elbow Right
-    jointIndexToSetting[4] = "Left Knee"; // Knee Left
-    jointIndexToSetting[5] = "Right Knee"; // Knee Right
+    jointIndexToSetting[15] = "ThighR";
+    jointIndexToSetting[0] = "Pelvis";
+    jointIndexToSetting[18] = "ArmR";
+    jointIndexToSetting[19] = "HandR";
+    jointIndexToSetting[4] = "ForearmR";
+    jointIndexToSetting[5] = "ShankR";
+    jointIndexToSetting[8] = "Head";
+    jointIndexToSetting[8] = "Back";
 
     // Connect the BodyWidget's jointSelected signal.
     connect(bodyModel, &BodyWidget::jointSelected, this, [this, imuLabels, jointIndexToSetting](int index){
@@ -337,35 +485,116 @@ void StartPage::updateCountdown()
         }
     }
 }
+// helper: تبدیل نام نمایش به یک کلید امن (بدون فاصله یا کاراکترهای غیرمجاز)
+static QString sanitizeKey(const QString &name) {
+    QString key = name;
+    key.remove(' ');  // حذف فاصله‌ها
 
+    // حذف تمام کاراکترهای غیر الفانومریک
+    QRegularExpression rx("[^A-Za-z0-9_]");
+    key.remove(rx);
+
+    return key;
+}
+
+
+#include <QDebug>
 void StartPage::saveAndNext() {
     QSet<int> uniqueValues;
-    for (const QString &setting : settings) {
-        QString value = combos[setting]->currentText();
-        comboValues[setting] = value;
-        if (uniqueValues.contains(value.toInt())) {
-            QMessageBox::warning(this, "Invalid Input", "Each IMU must have a unique ID.");
-            QMenu *menu = new QMenu(this);
-            QAction *action = menu->addAction("OK");
-            connect(action, &QAction::triggered, menu, &QMenu::close);
-            menu->exec();
+    for (const QString &setting : newSettings) {
+        // 1) اطمینان از وجود combo برای این setting
+        if (!combos.contains(setting) || combos[setting] == nullptr) {
+            qDebug() << "saveAndNext: combo for setting not found or null:" << setting;
+            QMessageBox::warning(this, tr("Missing Input"),
+                                 tr("Combo for '%1' not found. Please re-open the Assign IMUs step.").arg(setting));
             return;
         }
-        uniqueValues.insert(value.toInt());
+
+        // 2) خواندن مقدار و بررسی اعتبار عددی
+        QString valueStr = combos[setting]->currentText().trimmed();
+        bool ok = false;
+        int val = valueStr.toInt(&ok);
+        if (!ok) {
+            qDebug() << "saveAndNext: invalid number for" << setting << ":" << valueStr;
+            QMessageBox::warning(this, tr("Invalid Input"),
+                                 tr("Invalid IMU ID for '%1'. Please choose a number.").arg(setting));
+            return;
+        }
+
+        // 3) اعتبارسنجی یکتا بودن
+        if (uniqueValues.contains(val)) {
+            qDebug() << "saveAndNext: duplicate IMU id" << val << "for" << setting;
+            QMessageBox::warning(this, tr("Invalid Input"),
+                                 tr("Each IMU must have a unique ID. Duplicate: %1").arg(val));
+            return;
+        }
+
+        // 4) ذخیره و اضافه به مجموعهٔ یکتاها
+        comboValues[setting] = QString::number(val);
+        uniqueValues.insert(val);
     }
+
 
     combos.clear();
     QMap<QString, QVariant> selectedImus;
-    selectedImus["pelvis"] = comboValues["Pelvis"].toInt();
-    selectedImus["left_knee"] = comboValues["Left Knee"].toInt();
-    selectedImus["right_knee"] = comboValues["Right Knee"].toInt();
-    selectedImus["head"] = comboValues["Head"].toInt();
-    selectedImus["left_hand"] = comboValues["Left Hand"].toInt();
-    selectedImus["right_hand"] = comboValues["Right Hand"].toInt();
-    parent()->setProperty("selectedImus", selectedImus);
-    emit imusSelected(selectedImus); // انتشار سیگنال
+    QSet<int> usedIds;
+
+    for (const QString &displayName : newSettings) {
+        int id = -1;
+        bool ok = false;
+
+        // 1) Prefer the live combo (visible) if exists
+        if (combos.contains(displayName) && combos[displayName]) {
+            QString txt = combos[displayName]->currentText().trimmed();
+            id = txt.toInt(&ok);
+        }
+
+        // 2) Fallback to previously stored comboValues (if live combo missing)
+        if (!ok) {
+            QString stored = comboValues.value(displayName, "");
+            id = stored.toInt(&ok);
+        }
+
+        // 3) If still not ok, skip this setting (or you can choose a default)
+        if (!ok) {
+            qDebug() << "saveAndNext: no valid IMU id for" << displayName << "- skipping";
+            continue;
+        }
+
+        // 4) Validate uniqueness (optional: show warning and return if duplicate)
+        if (usedIds.contains(id)) {
+            QMessageBox::warning(this, tr("Invalid Input"),
+                                 tr("Each IMU must have a unique ID. Duplicate: %1").arg(id));
+            return;
+        }
+        usedIds.insert(id);
+
+        // 5) Map display name to internal key (use displayToInternal if available)
+        QString internalKey;
+        if (this->property("displayToInternal").isValid()) {
+            // if you stored displayToInternal as a member QMap, prefer that:
+            // assume displayToInternal is a QMap<QString,QString> member
+        }
+        if (displayToInternal.contains(displayName)) {
+            internalKey = displayToInternal[displayName];
+        } else {
+            internalKey = sanitizeKey(displayName);
+        }
+
+        // 6) store
+        selectedImus[internalKey] = QVariant(id);
+
+        // 7) persist selection in comboValues
+        comboValues[displayName] = QString::number(id);
+    }
+
+    // now use selectedImus as before
+    if (parent()) parent()->setProperty("selectedImus", QVariant::fromValue(selectedImus));
+
+    emit imusSelected(selectedImus);
     showStep2();
 }
+
 
 void StartPage::calibratePelvis(const IMU &data)
 {

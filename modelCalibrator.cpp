@@ -6,7 +6,6 @@ using namespace Eigen;
 #include <numeric>
 #include <QMessageBox>
 #include "calibrator_utils.h"
-#include <QDebug>
 
 // #include <vector>
 // #include <Eigen/Dense>
@@ -68,169 +67,58 @@ std::vector<Eigen::Matrix3f> quat_batch_to_rotmat(const Eigen::MatrixXf& quats) 
 */
 Calibrator::Calibrator(const std::map<std::string, int>& selected_imus,
                        const Eigen::MatrixXf& coord_data,
-                       const Eigen::MatrixXf& tpose_data) {
+                       const Eigen::MatrixXf& tpose_data,
+                       std::vector<Eigen::Vector4f> avg_quatt) {
     // === RMI ===
     try {
-        int total_rows = coord_data.rows();
-        int start_row = std::max(0, total_rows - 1000);
-        int num_rows = total_rows - start_row;
-        Eigen::MatrixXf pelvis_quats = coord_data.block(start_row, 0, num_rows, coord_data.cols());
+
         // Eigen::MatrixXf pelvis_quats = coord_data.bottomRows(1000);
-        Eigen::Vector4f avg_quat = pelvis_quats.colwise().mean();
-        RMI = quat_to_rotmat(avg_quat).transpose();
-        qDebug() << "RMI Matrix:";
-        for (int i = 0; i < 3; ++i) {
-            qDebug() << "Row" << i << ":" << RMI(i, 0) << RMI(i, 1) << RMI(i, 2);
-        }
+        // Eigen::Vector4f avg_quat = coord_data;
+        Eigen::Matrix3f R_coord;
+        R_coord << -1, 0, 0,
+            0, 0, 1,
+            0, 1, 0;
+        RMI = R_coord.transpose();
+        // Eigen::Vector4f avg_quat = /*R_coord*/;
 
-        // RMI << -1, 0, 0,
-        //             0, 0, 1,
-        //             0, 1, 0;
-        RMI = RMI.transpose();
-        qDebug() << "RMI Matrix:";
-        for (int i = 0; i < 3; ++i) {
-            qDebug() << "Row" << i << ":" << RMI(i, 0) << RMI(i, 1) << RMI(i, 2);
-        }
-        std::vector<std::string> joints = {"pelvis", "left_knee", "right_knee", "head", "left_hand", "right_hand"};
-        RIS.reserve(joints.size());
-        tpose_acc.reserve(joints.size());
-        for (const auto& joint : joints) {
-            int id = selected_imus.at(joint);
-            qDebug() << "ID for joint '" << joint << "':" << id;
-            int start_row = id * 1000;
-            int end_row = start_row + 1000;
-            int valid_rows = 0;
-            const float zero_tol = 1e-6f;
+    std::vector<std::string> joints = {"pelvis", "left_knee", "right_knee", "head", "left_hand", "right_hand"};
+    RIS.reserve(joints.size());
+    tpose_acc.reserve(joints.size());
 
-            for (int i = start_row; i < end_row; ++i) {
-                auto row = tpose_data.row(i);
-                bool all_zero = row.isZero(zero_tol);
-                bool has_nan  = (row.array().isNaN()).any();
-                if (!all_zero && !has_nan) ++valid_rows;
+    for (const auto& joint : joints) {
+        int id = selected_imus.at(joint);
 
-                // if (tpose_data.row(i).isZero()) break;
-                // valid_rows++;
-            }
-            std::cout << "start row: " << start_row << "\n" << "end row" << end_row << std::endl;
-            std::cout << "Valid Rows: " << valid_rows << std::endl;
-            Eigen::MatrixXf acc(valid_rows, 3);
-            Eigen::MatrixXf quat(valid_rows, 4);
-
-            int out = 0;
-            for (int i = start_row; i < end_row; ++i) {
-                auto row = tpose_data.row(i);
-                bool all_zero = row.isZero(zero_tol);
-                bool has_nan  = (row.array().isNaN()).any();
-                if (!all_zero && !has_nan) {
-                    acc.row(out)  = row.segment<3>(0).transpose() * 9.81f; // ستون 0..2
-                    quat.row(out) = row.segment<4>(3).transpose();        // ستون 3..6
-                    ++out;
-                }
-            }
-
-            // Eigen::MatrixXf acc = tpose_data.block(start_row, 0, valid_rows, 3) * 9.81;
-            // Eigen::MatrixXf quat = tpose_data.block(start_row, 3, valid_rows, 4);
-
-        }
-
-        for (const auto& joint : joints) {
-            int id = selected_imus.at(joint);
-            qDebug() << "ID for joint '" << joint << "':" << id;
-            int start_row = id * 1000;
-            int end_row = start_row + 1000;
-            int valid_rows = 0;
-            const float zero_tol = 1e-6f;
-
-            for (int i = start_row; i < end_row; ++i) {
-                auto row = tpose_data.row(i);
-                bool all_zero = row.isZero(zero_tol);
-                bool has_nan  = (row.array().isNaN()).any();
-                if (!all_zero && !has_nan) ++valid_rows;
-
-            //     if (tpose_data.row(i).isZero()) break;
-            //     valid_rows++;
-            }
-            std::cout << "start row: " << start_row << "\n" << "end row" << end_row << std::endl;
-            std::cout << "Valid Rows: " << valid_rows << std::endl;
-            // Eigen::MatrixXf acc = tpose_data.block(start_row, 0, valid_rows, 3) * 9.81;
-            // Eigen::MatrixXf quat = tpose_data.block(start_row, 3, valid_rows, 4);
-            Eigen::MatrixXf acc(valid_rows, 3);
-            Eigen::MatrixXf quat(valid_rows, 4);
-
-            int out = 0;
-            for (int i = start_row; i < end_row; ++i) {
-                auto row = tpose_data.row(i);
-                bool all_zero = row.isZero(zero_tol);
-                bool has_nan  = (row.array().isNaN()).any();
-                if (!all_zero && !has_nan) {
-                    acc.row(out)  = row.segment<3>(0).transpose() * 9.81f; // ستون 0..2
-                    quat.row(out) = row.segment<4>(3).transpose();        // ستون 3..6
-                    ++out;
-                }
-            }
-
-            qDebug() << "Quaternions for joint ID" << id << "(1000 samples):";
-            for (int i = 0; i < valid_rows; ++i) {
-                qDebug() << "Quat[" << i << "]:" << quat(i, 0) << quat(i, 1) << quat(i, 2) << quat(i, 3);
-            }
-
+            Eigen::MatrixXf acc = tpose_data.block(id * 1000, 0, 1000, 3) * 9.81;
+            Eigen::MatrixXf quat = tpose_data.block(id * 1000, 3, 1000, 4);
             std::vector<Eigen::Matrix3f> R = quat_batch_to_rotmat(quat);
 
-            // Average rotation matrix
+        // Average rotation matrix
             Eigen::Matrix3f R_avg = Eigen::Matrix3f::Zero();
-            int indx = 0;
-            for (const auto& Ri : R) {
-                qDebug() << "Ri[" << indx << "]:";
-                for (int row = 0; row < 3; ++row) {
-                    qDebug() << Ri(row, 0) << Ri(row, 1) << Ri(row, 2);
-                }
-                R_avg += Ri;
-                indx++;
-            }
-            /*
-            for (const auto& Ri : R) {
-                R_avg += Ri;
-                qDebug() << Ri;
-            }
-            */
-            R_avg /= R.size();
-            qDebug() << "R.size" << R.size();
-            RIS.push_back(R_avg);
+        for (const auto& Ri : R) R_avg += Ri;
+        R_avg /= R.size();
+        // RIS.push_back(R_avg);
 
-            // Average transformed acceleration
+        //
+        RIS.push_back(quat_to_rotmat(avg_quatt[id]));
+        // Average transformed acceleration
             Eigen::Vector3f mean_acc = Eigen::Vector3f::Zero();
-            for (int i = 0; i < valid_rows; ++i)
-                mean_acc += R[i] * acc.row(i).transpose();
-            mean_acc /= valid_rows;
-            tpose_acc.push_back(mean_acc);
-        }
+        for (int i = 0; i < 1000; ++i)
+            mean_acc += R[i] * acc.row(i).transpose();
+        mean_acc /= 1000.0;
+        tpose_acc.push_back(mean_acc);
+    }
 
-        // === RSB[i] = RMI * RIS[i].T ===
-        RSB.clear();
-        RSB.reserve(RIS.size());
+    // === RSB[i] = RMI * RIS[i].T ===
+    RSB.clear();
+    RSB.reserve(RIS.size());
 
-        for (size_t i = 0; i < RIS.size(); ++i) {
-            qDebug() << "RIS[" << i << "]:";
-            for (int row = 0; row < 3; ++row) {
-                qDebug() << RIS[i](row, 0) << RIS[i](row, 1) << RIS[i](row, 2);
-            }
-
+    for (size_t i = 0; i < RIS.size(); ++i) {
             Eigen::Matrix3f rsb = (RMI * RIS[i]).transpose();
-            qDebug() << "RSB[" << i << "]:";
-            for (int row = 0; row < 3; ++row) {
-                qDebug() << rsb(row, 0) << rsb(row, 1) << rsb(row, 2);
-            }
-            RSB.push_back(rsb);
-        }
-        /*
-        for (size_t i = 0; i < RIS.size(); ++i) {
-                Eigen::Matrix3f rsb = (RMI * RIS[i]).transpose();
-            RSB.push_back(rsb);
+        RSB.push_back(rsb);
+    }
 
-        }
-        */
-        // === acc_offsets = RMI * tpose_acc ===
-        acc_offsets.resize(tpose_acc.size(), 3);
+    // === acc_offsets = RMI * tpose_acc ===
+    acc_offsets.resize(tpose_acc.size(), 3);
         for (size_t i = 0; i < tpose_acc.size(); ++i) {
             acc_offsets.row(i) = (RMI * tpose_acc[i]).transpose();
         }

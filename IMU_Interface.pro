@@ -38,7 +38,8 @@ SOURCES += \
     3rdparty/imgui/backends/imgui_impl_opengl3.cpp \
     3rdparty/implot/implot.cpp \
     3rdparty/implot/implot_items.cpp \
-    utils.cpp
+    utils.cpp \
+    fullKinematics.hpp
 
 HEADERS += \
     ImageWithTextWidget.h \
@@ -100,13 +101,17 @@ DISTFILES += \
     $$RESOURCES_DIR/full_battery.png \
     $$RESOURCES_DIR/tick.png
 
+
 LIBS += -LC:/libtorch/lib -ltorch_cuda -lc10_cuda -ltorch -ltorch_cpu -lc10
-# LIBS += -L"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\lib\x64" -lcudart
 LIBS += C:/Users/ACER/Desktop/vcpkg/installed/x64-windows/lib/libzmq-mt-4_3_5.lib
-# LIBS += -LC:/Users/ACER/Desktop/vcpkg/installed/x64-windows/lib -lzmq
 
+# LIBS += -L"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\lib\x64" -lcudart
 
+INCLUDEPATH += C:/Users/ACER/Downloads/Compressed/matplotplusplus-1.2.2/matplotplusplus-1.2.2/source
 
 win32 {
     LIBS += -lOpenGL32
 }
+# LIBS += -LC:/Users/ASUS/vcpkg/installed/x64-windows/lib -lfftw3
+
+
