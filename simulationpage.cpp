@@ -49,16 +49,16 @@
 #endif
 #include <Windows.h>
 
-#define MODEL_PATH "C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/data/newModel-Online.pt"
-#define COORD_CSV_PATH "C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/data/coord_cache.bin"
-#define TPOSE_CSV_PATH "C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/data/tpose_cache.bin"
+#define MODEL_PATH "data/newModel-Online.pt"
+#define COORD_CSV_PATH "data/coord_cache.bin"
+#define TPOSE_CSV_PATH "data/tpose_cache.bin"
 
 SimulationPage::SimulationPage(QWidget *parent, USBReceiver *usbReceiver, bool isDarkTheme, const std::map<std::string, int>& imus)
     : QWidget(parent), isDarkTheme(isDarkTheme), usbReceiver(usbReceiver), selected_imus(imus)
 {
     initUI();
     // logging init
-    logFile = new QFile("C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/debug_log.txt");
+    logFile = new QFile("debug_log.txt");
     if (logFile->open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Append)) {
         logMessage("SimulationPage constructor started");
     } else {
@@ -158,7 +158,9 @@ SimulationPage::SimulationPage(QWidget *parent, USBReceiver *usbReceiver, bool i
     workerThread->start();
 
     coord_data.resize(1000, 4);
+    coord_data.setZero();
     pose_data.resize(18 * 1000, 7);
+    pose_data.setZero();
     sampleCount = 0;
 
     logMessage("SimulationPage constructor finished");
@@ -189,7 +191,7 @@ void SimulationPage::initUI()
     guideLayout->addWidget(guideLabel);
 
     guideImage = new QLabel();
-    QPixmap imuPixmap("C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacev67/icons/imu_icon.png");
+    QPixmap imuPixmap("icons/imu_icon.png");
     if (!imuPixmap.isNull()) {
         guideImage->setPixmap(imuPixmap.scaled(100, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     } else {
@@ -232,7 +234,7 @@ void SimulationPage::initUI()
                                 "QPushButton { background: #232526; color: #43cea2; border-radius: 8px; font: 14pt 'Segoe UI'; }"
                                 "QPushButton:hover { background: #43cea2; color: #232526; }" :
                                 "QPushButton { background: #e0e0e0; color: black; border: 1px solid #333; border-radius: 8px; font: 14pt 'Segoe UI'; }"
-                                          "QPushButton:hover { background: #333; color: white; }");
+                                "QPushButton:hover { background: #333; color: white; }");
 
     for (QPushButton *btn : {btnCalibration, btnOpenMesh, btnCloseMesh}) {
         controls->addWidget(btn);
@@ -253,7 +255,7 @@ void SimulationPage::initUI()
     qDebug() << "rootEntity:" << (rootEntity != nullptr) << "view:" << (view != nullptr);
     Qt3DRender::QCamera *camera = view->camera();
     camera->lens()->setPerspectiveProjection(45.0f, 16.0f/9.0f, 0.1f, 1000.0f);
-    camera->setPosition(QVector3D(5, 0, 0));
+    camera->setPosition(QVector3D(0, 0, 5));
     camera->setViewCenter(QVector3D(0, 0, 0));
 
     Qt3DExtras::QOrbitCameraController *camController = new Qt3DExtras::QOrbitCameraController(rootEntity);
@@ -473,8 +475,8 @@ void SimulationPage::applyTheme()
 
 void SimulationPage::loadModel()
 {
-    std::string npz_path = "C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/data/filtered_model.npz";
-    std::string fk_path = "C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/data/traced_smpl.pt";
+    std::string npz_path = "data/filtered_model.npz";
+    std::string fk_path = "data/traced_smpl.pt";
     smplModel = new SMPLModel(npz_path, fk_path);
     causal_avg = std::make_shared<CausalAvgImpl>(3);
     try {
@@ -518,7 +520,20 @@ void SimulationPage::loadModel()
 
 void SimulationPage::onIMUData(const IMU &data)
 {
-    qDebug() << "Received IMU data with ID:" << data.id;
+    // qDebug() << "Received IMU data with ID:" << data.id;
+
+    if (isCoordinateTesting && sampleCount < 1000) {
+        int pelvisId = selected_imus.at("pelvis");
+        if (data.id == pelvisId) {
+            int row = sampleCount;
+            coord_data(row, 0) = data.quat[0];
+            coord_data(row, 1) = data.quat[1];
+            coord_data(row, 2) = data.quat[2];
+            coord_data(row, 3) = data.quat[3];
+            sampleCount++;
+        }
+    }
+
     if (isTPoseTesting && sampleCount < 1000) {
         int id = data.id;
         auto it = std::find_if(selected_imus.begin(), selected_imus.end(),
@@ -534,58 +549,56 @@ void SimulationPage::onIMUData(const IMU &data)
                 pose_data(row, 5) = data.quat[2];
                 pose_data(row, 6) = data.quat[3];
 
-                qDebug() << "Stored quat for ID" << id << "at row" << row << ":"
-                         << data.quat[0] << data.quat[1] << data.quat[2] << data.quat[3];
-                qDebug() << "pose_data Row" << row << ": ["
-                         << pose_data(row, 0) << ", "  // acc_x
-                         << pose_data(row, 1) << ", "  // acc_y
-                         << pose_data(row, 2) << ", "  // acc_z
-                         << pose_data(row, 3) << ", "  // quat_x
-                         << pose_data(row, 4) << ", "  // quat_y
-                         << pose_data(row, 5) << ", "  // quat_z
-                         << pose_data(row, 6) << "]";  // quat_w
+                // qDebug() << "Stored quat for ID" << id << "at row" << row << ":"
+                //          << data.quat[0] << data.quat[1] << data.quat[2] << data.quat[3];
+                // qDebug() << "pose_data Row" << row << ": ["
+                //          << pose_data(row, 0) << ", "  // acc_x
+                //          << pose_data(row, 1) << ", "  // acc_y
+                //          << pose_data(row, 2) << ", "  // acc_z
+                //          << pose_data(row, 3) << ", "  // quat_x
+                //          << pose_data(row, 4) << ", "  // quat_y
+                //          << pose_data(row, 5) << ", "  // quat_z
+                //          << pose_data(row, 6) << "]";  // quat_w
 
                 if (id == selected_imus.at("pelvis")) {
                     sampleCount++;
-                    qDebug() << "Incremented sampleCount to" << sampleCount << "for pelvis IMU ID" << id;
-                    }
+                    // qDebug() << "Incremented sampleCount to" << sampleCount << "for pelvis IMU ID" << id;
+                }
             } else {
-                qDebug() << "Invalid row index:" << row << "for IMU ID:" << id;
+                // qDebug() << "Invalid row index:" << row << "for IMU ID:" << id;
             }
         } else {
-            qDebug() << "IMU ID" << id << "not in selected_imus";
+            // qDebug() << "IMU ID" << id << "not in selected_imus";
         }
     }
     // static const std::set<int> selectedIds = {5, 9, 12, 8, 14, 15};
     if (containsId(selected_imus, data.id)) {
-            lastImuData[data.id] = data;
-        qDebug() << "IMU ID: " << data.id << ", lacc: [" << lastImuData[data.id].lacc[0] << "," << lastImuData[data.id].lacc[1] << "," << lastImuData[data.id].lacc[2] << "]";
-        qDebug() << "IMU ID: " << data.id << ", quat: [" << lastImuData[data.id].quat[0] << "," << lastImuData[data.id].quat[1] << "," << lastImuData[data.id].quat[2] << "," << lastImuData[data.id].quat[3] << "]";
+        lastImuData[data.id] = data;
+        // qDebug() << "IMU ID: " << data.id << ", lacc: [" << lastImuData[data.id].lacc[0] << "," << lastImuData[data.id].lacc[1] << "," << lastImuData[data.id].lacc[2] << "]";
+        // qDebug() << "IMU ID: " << data.id << ", quat: [" << lastImuData[data.id].quat[0] << "," << lastImuData[data.id].quat[1] << "," << lastImuData[data.id].quat[2] << "," << lastImuData[data.id].quat[3] << "]";
     } else {
-        qDebug() << "Ignoring IMU ID: " << data.id << " (not in selected IDs)";
+        // qDebug() << "Ignoring IMU ID: " << data.id << " (not in selected IDs)";
     }
-    qDebug() << "data id: " << data.id << "\n";
-    qDebug() << "lastIMUDATA size" << lastImuData.size() << "\n";
+    // qDebug() << "data id: " << data.id << "\n";
+    // qDebug() << "lastIMUDATA size" << lastImuData.size() << "\n";
     if (isSimulating && lastImuData.size() >= 6){
         for (const auto& pair : lastImuData) {
             const IMU& imu = pair.second;
             if (std::isnan(imu.lacc[0]) || std::isnan(imu.lacc[1]) || std::isnan(imu.lacc[2]) ||
                 std::isnan(imu.quat[0]) || std::isnan(imu.quat[1]) || std::isnan(imu.quat[2]) || std::isnan(imu.quat[3])) {
-                qDebug() << "Error: Invalid IMU data for ID " << pair.first;
+                // qDebug() << "Error: Invalid IMU data for ID " << pair.first;
                 return;
             }
         }
         if (containsId(selected_imus, data.id)) {
             emit sendIMUData(data);
-            qDebug() << "Emitted IMU data for ID: " << data.id;
+            // qDebug() << "Emitted IMU data for ID: " << data.id;
         }
     }
 }
 
 void SimulationPage::updateMesh(const std::vector<float> &verts, const std::vector<int> &faces) {
-    qDebug() << "start updating Mesh";
     std::vector<QVector3D> normals = computeNormals(verts, faces);
-    qDebug() << verts.size();
     std::vector<float> extendedVerts;
     extendedVerts.reserve(verts.size() * 8 / 3);
 
@@ -646,7 +659,7 @@ void SimulationPage::updateModel()
     for (int id : {5, 11, 12, 8, 14, 15}) {
         const IMU &imu = lastImuData[id];
         accs.push_back(torch::tensor({imu.lacc[0], imu.lacc[1], imu.lacc[2]}).reshape({1, 3}));
-        rots.push_back(torch::tensor({imu.quat[3], imu.quat[0], imu.quat[1], imu.quat[2]}).reshape({1, 4}));
+        rots.push_back(torch::tensor({imu.quat[0], imu.quat[1], imu.quat[2], imu.quat[3]}).reshape({1, 4}));
     }
 
     auto acc = torch::cat(accs, 0) * 9.81;
@@ -692,9 +705,9 @@ void SimulationPage::updateModel()
     // qDebug() << calibAcc.size();
     qDebug() << "start loading model\n";
     try{
-    auto output = model->forward({calibAcc, calibRot}).toTuple();
-    auto pose = output->elements()[0].toTensor();   // [1, 24, 3, 3]
-    auto trans = output->elements()[1].toTensor();  // [1, 3]
+        auto output = model->forward({calibAcc, calibRot}).toTuple();
+        auto pose = output->elements()[0].toTensor();   // [1, 24, 3, 3]
+        auto trans = output->elements()[1].toTensor();  // [1, 3]
         qDebug() << "model returned datas\n";
 
         int jointIndex = jointComboBox->currentData().toInt();
@@ -726,16 +739,16 @@ void SimulationPage::updateModel()
         auto [verts, faces, joints] = smplModel->view_motion(p_pose_list, p_trans_list);
         qDebug() << "Finished Sampl Model\n";
 
-    torch::Tensor* state_ptr = static_cast<torch::Tensor*>(avg_state);
-    c10::optional<torch::Tensor> opt_state;
-    if (state_ptr)
-        opt_state = *state_ptr;
-    auto [pooled_verts, new_state] = causal_avg->forward(verts.unsqueeze(0), opt_state);
-    verts = pooled_verts;
-    if (!avg_state)
-        avg_state = new torch::Tensor(new_state);
-    else
-        *static_cast<torch::Tensor*>(avg_state) = new_state;
+        torch::Tensor* state_ptr = static_cast<torch::Tensor*>(avg_state);
+        c10::optional<torch::Tensor> opt_state;
+        if (state_ptr)
+            opt_state = *state_ptr;
+        auto [pooled_verts, new_state] = causal_avg->forward(verts.unsqueeze(0), opt_state);
+        verts = pooled_verts;
+        if (!avg_state)
+            avg_state = new torch::Tensor(new_state);
+        else
+            *static_cast<torch::Tensor*>(avg_state) = new_state;
         verts = verts.contiguous().to(torch::kCPU);
         std::vector<float> vertices(verts.data_ptr<float>(), verts.data_ptr<float>() + verts.numel());
 
@@ -744,7 +757,7 @@ void SimulationPage::updateModel()
         if (faces.scalar_type() == torch::kInt64) {
             std::vector<int64_t> tmp(faces.data_ptr<int64_t>(), faces.data_ptr<int64_t>() + faces.numel());
             face_indices.assign(tmp.begin(), tmp.end());
-    } else {
+        } else {
             face_indices.assign(faces.data_ptr<int>(), faces.data_ptr<int>() + faces.numel());
         }
         updateMesh(vertices, face_indices);
@@ -759,13 +772,13 @@ void SimulationPage::updateModel()
     }
     catch (...) {
         std::cerr << "Unknown type of exception!" << std::endl;
-}
+    }
 
     // send_mesh(vertices, face_indices);
 }
 
 bool is_tpose_satisfied(int i/*const torch::Tensor& joints*/) {
-    if (i > 350 && i < 370) 
+    if (i > 350 && i < 370)
         return false;
 }
 
@@ -779,10 +792,10 @@ void SimulationPage::runModelAndSendMesh()
     std::cout << "detaching";
     // meshThread.detach();
     std::cout << "detached";
-    std::string model_path = "C:/C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/data/newModel-Online.pt";
-    std::string npz_path   =  "C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/data/s1_walking1.npz";
-    std::string fk_path = "C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/data/traced_smpl.pt";
-    std::string npz_smpl_path = "C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/data/filtered_model.npz";
+    std::string model_path = "data/newModel-Online.pt";
+    std::string npz_path   =  "data/s1_walking1.npz";
+    std::string fk_path = "data/traced_smpl.pt";
+    std::string npz_smpl_path = "data/filtered_model.npz";
 
     std::map<std::string, int> selected_imus = {
         {"pelvis", 5}, {"l_foot", 11}, {"r_foot", 12},
@@ -905,12 +918,12 @@ void SimulationPage::openMeshSimulation() {
         // });
         // modelThread.detach();
         QDir().mkpath("data");
-            csvFile.open(QString("data/joints_angles_%1.csv").arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss")).toStdString());
+        csvFile.open(QString("data/joints_angles_%1.csv").arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss")).toStdString());
         if(csvFile.is_open()){
             for (int var = 0; var < 24; ++var) {
                 csvFile << "Roll" << var << "," << "Pitch" << var << "," << "Yaw" << var << ",";
             }
-                csvFile << "trans_x,trans_y,trans_z\n";
+            csvFile << "trans_x,trans_y,trans_z\n";
         }
         int currentJoint = jointComboBox->currentData().toInt();
         emit sendJointIndex(currentJoint);
@@ -954,7 +967,6 @@ void SimulationPage::updateRunModelConnection(int index)
     }
 }
 
-/*
 // void SimulationPage::onCalibrationClicked()
 // {
 //     selectedTPosePath = QFileDialog::getOpenFileName(this,
@@ -982,13 +994,12 @@ void SimulationPage::updateRunModelConnection(int index)
 //         qDebug() << "No file selected.";
 //     }
 // }
-*/
 
 void SimulationPage::onChooseFileClicked()
 {
     selectedCsvPath = QFileDialog::getOpenFileName(this,
                                                    tr("Choose CSV File"),
-                                                   "C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/",
+                                                   ".",
                                                    tr("CSV Files (*.csv);;All Files (*)"));
 
     if (!selectedCsvPath.isEmpty()) {
@@ -1125,7 +1136,7 @@ void SimulationPage::transmit()
     if (pythonProcess) {
         qDebug() << "[C++] Python viewer already running.";
     }else{
-        QString pythonScriptPath = "C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/data/createChart.py";
+        QString pythonScriptPath = "data/createChart.py";
         QString pythonExe = "python";
 
         pythonProcess = new QProcess(this);
@@ -1237,7 +1248,6 @@ void SimulationPage::closeMeshSimulation() {
         csvFile.flush();
         csvFile.close();
     }
-    qDebug() << "closing mesh simulation with nn online" ;
 }
 
 SimulationPage::~SimulationPage()
@@ -1356,7 +1366,7 @@ void SimulationPage::onTPoseTest() {
 void SimulationPage::processPoseTest() {
     QString selectedPose = poseComboBox->currentText();
     int numSamples = (selectedPose == "N-Pose") ? 800 : 1000;
-    disconnect(usbReceiver, &USBReceiver::data, this, &SimulationPage::onIMUData);
+
     if (pose_data.rows() < numSamples * 6) {  // 6 joints
         QMessageBox::critical(this, "Error", QString("Insufficient data for %1 test. Required: at least %2 rows.").arg(selectedPose).arg(numSamples * 6));
         return;
@@ -1372,80 +1382,57 @@ void SimulationPage::processPoseTest() {
         if (selectedPose == "N-Pose") {
             calibrator = std::make_unique<NposeCalibrator>(selected_imus, coord_data, pose_data);
         } else {
-            qDebug() << "pose_data shape: rows=" << pose_data.rows() << ", cols=" << pose_data.cols();
-
-            // Print first 3000 rows (all columns)
-            for (int i = 5000; i < 5400; ++i) {
-                qDebug() << "Row" << i << ": ["
-                         << pose_data(i, 0) << ", "  // acc_x
-                         << pose_data(i, 1) << ", "  // acc_y
-                         << pose_data(i, 2) << ", "  // acc_z
-                         << pose_data(i, 3) << ", "  // quat_x
-                         << pose_data(i, 4) << ", "  // quat_y
-                         << pose_data(i, 5) << ", "  // quat_z
-                         << pose_data(i, 6) << "]";  // quat_w
-            }
-            for (int i = 9000; i < 9400; ++i) {
-                qDebug() << "Row" << i << ": ["
-                         << pose_data(i, 0) << ", "  // acc_x
-                         << pose_data(i, 1) << ", "  // acc_y
-                         << pose_data(i, 2) << ", "  // acc_z
-                         << pose_data(i, 3) << ", "  // quat_x
-                         << pose_data(i, 4) << ", "  // quat_y
-                         << pose_data(i, 5) << ", "  // quat_z
-                         << pose_data(i, 6) << "]";  // quat_w
-            }
-            for (int i = 11000; i < 11400; ++i) {
-                qDebug() << "Row" << i << ": ["
-                         << pose_data(i, 0) << ", "  // acc_x
-                         << pose_data(i, 1) << ", "  // acc_y
-                         << pose_data(i, 2) << ", "  // acc_z
-                         << pose_data(i, 3) << ", "  // quat_x
-                         << pose_data(i, 4) << ", "  // quat_y
-                         << pose_data(i, 5) << ", "  // quat_z
-                         << pose_data(i, 6) << "]";  // quat_w
-            }
-            for (int i = 12000; i < 12400; ++i) {
-                qDebug() << "Row" << i << ": ["
-                         << pose_data(i, 0) << ", "  // acc_x
-                         << pose_data(i, 1) << ", "  // acc_y
-                         << pose_data(i, 2) << ", "  // acc_z
-                         << pose_data(i, 3) << ", "  // quat_x
-                         << pose_data(i, 4) << ", "  // quat_y
-                         << pose_data(i, 5) << ", "  // quat_z
-                         << pose_data(i, 6) << "]";  // quat_w
-            }
-            for (int i = 13000; i < 13400; ++i) {
-                qDebug() << "Row" << i << ": ["
-                         << pose_data(i, 0) << ", "  // acc_x
-                         << pose_data(i, 1) << ", "  // acc_y
-                         << pose_data(i, 2) << ", "  // acc_z
-                         << pose_data(i, 3) << ", "  // quat_x
-                         << pose_data(i, 4) << ", "  // quat_y
-                         << pose_data(i, 5) << ", "  // quat_z
-                         << pose_data(i, 6) << "]";  // quat_w
-            }
-            for (int i = 14000; i < 14400; ++i) {
-                qDebug() << "Row" << i << ": ["
-                         << pose_data(i, 0) << ", "  // acc_x
-                         << pose_data(i, 1) << ", "  // acc_y
-                         << pose_data(i, 2) << ", "  // acc_z
-                         << pose_data(i, 3) << ", "  // quat_x
-                         << pose_data(i, 4) << ", "  // quat_y
-                         << pose_data(i, 5) << ", "  // quat_z
-                         << pose_data(i, 6) << "]";  // quat_w
-            }
-            for (int i = 15000; i < 15400; ++i) {
-                qDebug() << "Row" << i << ": ["
-                         << pose_data(i, 0) << ", "  // acc_x
-                         << pose_data(i, 1) << ", "  // acc_y
-                         << pose_data(i, 2) << ", "  // acc_z
-                         << pose_data(i, 3) << ", "  // quat_x
-                         << pose_data(i, 4) << ", "  // quat_y
-                         << pose_data(i, 5) << ", "  // quat_z
-                         << pose_data(i, 6) << "]";  // quat_w
-            }
-            qDebug() << "... (showing first 3000 rows; total rows:" << pose_data.rows() << ")";
+            // qDebug() << "pose_data shape: rows=" << pose_data.rows() << ", cols=" << pose_data.cols();
+            // for (int i = 4000; i < 4300; ++i) {
+            //     qDebug() << "Row" << i << ": ["
+            //              << pose_data(i, 0) << ", "  // quat_w
+            //              << pose_data(i, 1) << ", "  // quat_x
+            //              << pose_data(i, 2) << ", "  // quat_y
+            //              << pose_data(i, 3) << "]";  // quat_z
+            // }
+            // for (int i = 7000; i < 7300; ++i) {
+            //     qDebug() << "Row" << i << ": ["
+            //              << pose_data(i, 0) << ", "  // quat_w
+            //              << pose_data(i, 1) << ", "  // quat_x
+            //              << pose_data(i, 2) << ", "  // quat_y
+            //              << pose_data(i, 3) << "]";  // quat_z
+            // }
+            // for (int i = 8000; i < 8300; ++i) {
+            //     qDebug() << "Row" << i << ": ["
+            //              << pose_data(i, 0) << ", "  // quat_w
+            //              << pose_data(i, 1) << ", "  // quat_x
+            //              << pose_data(i, 2) << ", "  // quat_y
+            //              << pose_data(i, 3) << "]";  // quat_z
+            // }
+            // for (int i = 9000; i < 9300; ++i) {
+            //     qDebug() << "Row" << i << ": ["
+            //              << pose_data(i, 0) << ", "  // quat_w
+            //              << pose_data(i, 1) << ", "  // quat_x
+            //              << pose_data(i, 2) << ", "  // quat_y
+            //              << pose_data(i, 3) << "]";  // quat_z
+            // }
+            // for (int i = 10000; i < 10300; ++i) {
+            //     qDebug() << "Row" << i << ": ["
+            //              << pose_data(i, 0) << ", "  // quat_w
+            //              << pose_data(i, 1) << ", "  // quat_x
+            //              << pose_data(i, 2) << ", "  // quat_y
+            //              << pose_data(i, 3) << "]";  // quat_z
+            // }
+            // for (int i = 11000; i < 11300; ++i) {
+            //     qDebug() << "Row" << i << ": ["
+            //              << pose_data(i, 0) << ", "  // quat_w
+            //              << pose_data(i, 1) << ", "  // quat_x
+            //              << pose_data(i, 2) << ", "  // quat_y
+            //              << pose_data(i, 3) << "]";  // quat_z
+            // }
+            // qDebug() << "coord_data shape: rows=" << coord_data.rows() << ", cols=" << coord_data.cols();
+            // for (int i = 0; i < 300; ++i) {
+            //     qDebug() << "Row" << i << ": ["
+            //              << coord_data(i, 0) << ", "  // quat_w
+            //              << coord_data(i, 1) << ", "  // quat_x
+            //              << coord_data(i, 2) << ", "  // quat_y
+            //              << coord_data(i, 3) << "]";  // quat_z
+            // }
             calibrator = std::make_unique<Calibrator>(selected_imus, coord_data, pose_data);
 
         }
@@ -1482,7 +1469,7 @@ void SimulationPage::updateGuideBox(bool isCoordinateTest) {
     QString selectedPose = poseComboBox->currentText();
     if (isCoordinateTest) {
         guideLabel->setText("Coordinate Test");
-        QPixmap imuPixmap("C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/icons/imu_icon.png");
+        QPixmap imuPixmap("icons/imu_icon.png");
         if (!imuPixmap.isNull()) {
             guideImage->setPixmap(imuPixmap.scaled(100, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation));
         } else {
@@ -1491,7 +1478,7 @@ void SimulationPage::updateGuideBox(bool isCoordinateTest) {
     } else {
         QString poseText = (selectedPose == "N-Pose") ? "N-Pose Test" : "T-Pose Test";
         guideLabel->setText(poseText);
-        QString poseIconPath = (selectedPose == "N-Pose") ? "C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/icons/npose_icon.png" : "C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/icons/tpose_icon.png";
+        QString poseIconPath = (selectedPose == "N-Pose") ? "icons/npose_icon.png" : "icons/tpose_icon.png";
         QPixmap posePixmap(poseIconPath);
         if (!posePixmap.isNull()) {
             guideImage->setPixmap(posePixmap.scaled(100, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation));
@@ -1502,7 +1489,7 @@ void SimulationPage::updateGuideBox(bool isCoordinateTest) {
 }
 
 void SimulationPage::startCalibrationTests() {
-    updateGuideBox(true);
+    updateGuideBox(true); // نمایش باکس راهنمای Coordinate Test
     CountdownDialog* dialog = new CountdownDialog("Hold Y axis upward", isDarkTheme, this);
     connect(dialog, &CountdownDialog::countdownStarted, this, [&]() {
         isCoordinateTesting = true;
@@ -1514,12 +1501,13 @@ void SimulationPage::startCalibrationTests() {
 }
 
 void SimulationPage::handleCoordinateTestFinished() {
-    updateGuideBox(false);
+    updateGuideBox(false); // تغییر به باکس راهنمای Pose Test
     QString selectedPose = poseComboBox->currentText();
     QString countdownMessage = (selectedPose == "N-Pose") ? "Please hold N-pose position" : "Please hold T-pose position";
     CountdownDialog* dialog = new CountdownDialog(countdownMessage, isDarkTheme, this);
     connect(dialog, &CountdownDialog::countdownStarted, this, [&]() {
         isTPoseTesting = true;
+        isCoordinateTesting = false;
         sampleCount = 0;
     });
     connect(dialog, &CountdownDialog::countdownFinished, this, &SimulationPage::handlePoseTestFinished);
@@ -1527,12 +1515,12 @@ void SimulationPage::handleCoordinateTestFinished() {
 }
 
 void SimulationPage::handlePoseTestFinished() {
-    processPoseTest();
+    processPoseTest(); // اجرای پردازش Pose Test
     btnOpenMesh->setEnabled(true);
 }
 
 void SimulationPage::updateJointTraces(const std::vector<QVector3D>& currentJoints) {
-    logMessage("updateJointTraces called with " + QString::number(currentJoints.size()) + " joints");
+    // logMessage("updateJointTraces called with " + QString::number(currentJoints.size()) + " joints");
     if (!traceEnabled || currentJoints.empty() || currentJoints.size() != jointTraces.size()) {
         clearTraces();  // اگر mismatch، clear کن
         return;

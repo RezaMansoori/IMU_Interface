@@ -2,6 +2,7 @@
 #include <QtCore/QDebug>
 #include <QtSerialPort/QSerialPort>
 #include <QtSerialPort/QSerialPortInfo>
+#include <chrono>
 
 USBReceiver::USBReceiver(int axisMode, int numImus, QObject *parent)
     : QThread{parent},
@@ -123,6 +124,9 @@ void USBReceiver::run()
                 ds.device()->seek(0);
                 ds >> temp;
                 if (validateData(temp)) {
+                    temp.hostEmitTimeUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                                              std::chrono::steady_clock::now().time_since_epoch())
+                                              .count();
                     emit data(temp);
                     if (m_isRecording) {
                         m_recorder->addData(temp);

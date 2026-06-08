@@ -101,10 +101,10 @@ DISTFILES += \
     $$RESOURCES_DIR/tick.png
 
 LIBS += -LC:/libtorch/lib -ltorch_cuda -lc10_cuda -ltorch -ltorch_cpu -lc10
-# LIBS += -L"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\lib\x64" -lcudart
 LIBS += C:/Users/ACER/Desktop/vcpkg/installed/x64-windows/lib/libzmq-mt-4_3_5.lib
-# LIBS += -LC:/Users/ACER/Desktop/vcpkg/installed/x64-windows/lib -lzmq
 
+# LIBS += -L"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\lib\x64" -lcudart
+# LIBS += -LC:/Users/ACER/Desktop/vcpkg/installed/x64-windows/lib -lzmq
 
 
 win32 {

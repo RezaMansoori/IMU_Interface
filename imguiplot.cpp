@@ -254,3 +254,9 @@ void ImGuiPlot::setPlotCount(int count) {
     update();
 }
 
+void ImGuiPlot::setJointNum(int num) {
+    joint_num = num;
+    update();
+}
+
+
