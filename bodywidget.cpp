@@ -6,7 +6,7 @@
 BodyWidget::BodyWidget(QWidget *parent)
     : QWidget(parent)
 {
-    bodyImage = QPixmap("C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/data/smpl2.png");
+    bodyImage = QPixmap("C:/Users/User/OneDrive/Desktop/qt project/IMU_Interfacevfinal/data/smpl2.png");
 
     QVector<QPoint> pixelPoints = {
         {150, 140}, // pelvis

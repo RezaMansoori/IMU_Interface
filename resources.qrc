@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file>icons/critical_battery.png</file>
+        <file>icons/low_battery.png</file>
+        <file>icons/medium_battery.png</file>
+        <file>icons/high_battery.png</file>
+        <file>icons/full_battery.png</file>
+        <file>icons/tick.png</file>
+        <file>icons/fum-care-high-quality.png</file>
+    </qresource>
+</RCC>

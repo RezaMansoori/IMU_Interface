@@ -82,7 +82,14 @@ public:
         stackedWidget = new QStackedWidget();
         usbReceiver = new USBReceiver(axisMode, numImus, this);
         std::map<std::string, int> selectedImus;
-        simulationPage = new SimulationPage(this, usbReceiver, isDarkTheme, selectedImus);
+        QVariantMap imus;
+        for (const auto &p : selectedImus) {
+            imus[QString::fromStdString(p.first)] = p.second;
+        }
+
+        simulationPage = new SimulationPage(this, usbReceiver, true, imus);
+
+        // simulationPage = new SimulationPage(this, usbReceiver, isDarkTheme, selectedImus);
         startPage = new StartPage(this, isDarkTheme, usbReceiver);
         connect(startPage, &StartPage::startSimulationRequested, this, [this]() { stackedWidget->setCurrentWidget(simulationPage); });
         connect(startPage, &StartPage::showInTableRequested, this, [this](int imuId) {

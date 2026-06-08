@@ -30,6 +30,7 @@ class ImGuiPlot : public QOpenGLWidget, protected QOpenGLExtraFunctions {
   int plotCount() const { return m_plotCount; }
   void setJointNum(int num);
 
+
  protected:
   void initializeGL() override;
   void paintGL() override;

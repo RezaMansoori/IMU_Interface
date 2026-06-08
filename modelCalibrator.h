@@ -54,7 +54,8 @@ public:
 
     Calibrator(const std::map<std::string, int>& selected_imus,
                const Eigen::MatrixXf& coord_data,
-               const Eigen::MatrixXf& tpose_data);
+               const Eigen::MatrixXf& tpose_data,
+               std::vector<Eigen::Vector4f> avg_quat);
 
     void calibrate(const Eigen::MatrixXf& acc,
                    const std::vector<Eigen::Matrix3f>& rot,

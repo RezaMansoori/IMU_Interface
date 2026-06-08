@@ -1,10 +1,10 @@
-#include "imguiplot.h"
+#include "components/imguiplot.h"
 
-#include <imgui.h>               /// IMGUI main header include
-#include <imgui_impl_opengl3.h>  /// IMGUI backend include
-#include <imgui_internal.h>  /// IMGUI internal header for ImGui::SetCurrentContext()
-#include <implot.h>          /// IMPLOT main header include
-#include <implot_internal.h>  /// IMPLOT internal header for ImPlot::SetCurrentContext()
+#include <3rdparty/imgui/imgui.h>               /// IMGUI main header include
+#include <3rdparty/imgui//backends/imgui_impl_opengl3.h>  /// IMGUI backend include
+#include <3rdparty/imgui/imgui_internal.h>  /// IMGUI internal header for ImGui::SetCurrentContext()
+#include <3rdparty/implot/implot.h>          /// IMPLOT main header include
+#include <3rdparty/implot/implot_internal.h>  /// IMPLOT internal header for ImPlot::SetCurrentContext()
 
 #include <QtCore/QEvent>
 #include <QtCore/QTimer>
@@ -173,9 +173,48 @@ void ImGuiPlot::paintGL() {
                           ImPlotFlags_Crosshairs)) {
       ImPlot::SetupAxisTicks(ImAxis_X1, nullptr, 0);
         if(m_plotCount==1){
-          ImPlot::PlotLine("x", m_datas[i][0], m_datas[i][1], data_size);
-          ImPlot::PlotLine("y", m_datas[i][0], m_datas[i][2], data_size);
-          ImPlot::PlotLine("z", m_datas[i][0], m_datas[i][3], data_size);
+          switch (joint_num) {
+          case 0:
+              ImPlot::PlotLine("flexion/extension(x)", m_datas[i][0], m_datas[i][1], data_size);
+              ImPlot::PlotLine("endo/exo(y)", m_datas[i][0], m_datas[i][2], data_size);
+              ImPlot::PlotLine("abduction/adduction(z)", m_datas[i][0], m_datas[i][3], data_size);
+              break;
+          case 1:
+              ImPlot::PlotLine("flexion/extension(x)", m_datas[i][0], m_datas[i][1], data_size);
+              ImPlot::PlotLine("endo/exo(y)", m_datas[i][0], m_datas[i][2], data_size);
+              ImPlot::PlotLine("abduction/adduction(z)", m_datas[i][0], m_datas[i][3], data_size);
+              break;
+          case 2:
+              ImPlot::PlotLine("flexion/extension(x)", m_datas[i][0], m_datas[i][1], data_size);
+              ImPlot::PlotLine("endo/exo(y)", m_datas[i][0], m_datas[i][2], data_size);
+              ImPlot::PlotLine("abduction/adduction(z)", m_datas[i][0], m_datas[i][3], data_size);
+              break;
+          case 3:
+              ImPlot::PlotLine("flexion/extension(x)", m_datas[i][0], m_datas[i][1], data_size);
+              ImPlot::PlotLine("endo/exo(y)", m_datas[i][0], m_datas[i][2], data_size);
+              ImPlot::PlotLine("abduction/adduction(z)", m_datas[i][0], m_datas[i][3], data_size);
+              break;
+          case 4:
+              ImPlot::PlotLine("flexion/extension(x)", m_datas[i][0], m_datas[i][1], data_size);
+              ImPlot::PlotLine("endo/exo(y)", m_datas[i][0], m_datas[i][2], data_size);
+              ImPlot::PlotLine("abduction/adduction(z)", m_datas[i][0], m_datas[i][3], data_size);
+              break;
+          case 5:
+              ImPlot::PlotLine("flexion/extension(x)", m_datas[i][0], m_datas[i][1], data_size);
+              ImPlot::PlotLine("endo/exo(y)", m_datas[i][0], m_datas[i][2], data_size);
+              ImPlot::PlotLine("abduction/adduction(z)", m_datas[i][0], m_datas[i][3], data_size);
+              break;
+          case 6:
+              ImPlot::PlotLine("flexion/extension(x)", m_datas[i][0], m_datas[i][1], data_size);
+              ImPlot::PlotLine("endo/exo(y)", m_datas[i][0], m_datas[i][2], data_size);
+              ImPlot::PlotLine("abduction/adduction(z)", m_datas[i][0], m_datas[i][3], data_size);
+              break;
+          default:
+              ImPlot::PlotLine("x", m_datas[i][0], m_datas[i][1], data_size);
+              ImPlot::PlotLine("y", m_datas[i][0], m_datas[i][2], data_size);
+              ImPlot::PlotLine("z", m_datas[i][0], m_datas[i][3], data_size);
+              break;
+          }
         }else{
             ImPlot::PlotLine("x", m_datas[i][0], m_datas[i][1], data_size);
             ImPlot::PlotLine("y", m_datas[i][0], m_datas[i][2], data_size);
@@ -258,5 +297,3 @@ void ImGuiPlot::setJointNum(int num) {
     joint_num = num;
     update();
 }
-
-

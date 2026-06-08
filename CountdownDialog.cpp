@@ -32,7 +32,6 @@ CountdownDialog::CountdownDialog(const QString& message, bool isDarkTheme, QWidg
 }
 
 void CountdownDialog::onReadyClicked() {
-    countdownValue = 10;
     readyButton->hide();
     timerLabel->setText(QString::number(countdownValue));
     countdownTimer->start(1000); // هر ثانیه

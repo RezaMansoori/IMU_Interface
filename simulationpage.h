@@ -9,7 +9,7 @@
 #include "usbreceiver.h"
 #include "calibratorBase.h"
 #include "modelCalibratorNpose.h"  // برای استفاده از NposeCalibrator
-
+#include "fullKinematics.hpp"
 #include <QWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -59,12 +59,15 @@ public:
     void applyTheme();
     void sendMeshLoop();
     ~SimulationPage();
-    explicit SimulationPage(QWidget *parent = nullptr, USBReceiver *usbReceiver = nullptr, bool isDarkTheme = true, const std::map<std::string, int>& imus = {});
+    explicit SimulationPage(QWidget *parent = nullptr, USBReceiver *usbReceiver = nullptr, bool isDarkTheme = true, const QVariantMap &imus={});
     int getSelectedIMU(){return selectedIMU;}
-
-
+    std::vector<Eigen::Vector4f> avg_quat;
+    std::vector<torch::Tensor> imuStack;
+    torch::Tensor sample = torch::zeros({18, 3, 3});
+    int imuCount;
 public slots:
     void onIMUData(const IMU &data);
+    // void onIMUDataKin(const IMU &data);
     void updateSelectedImus(const QMap<QString, QVariant> &selectedImus);
     void onAllEulerAnglesUpdated(const std::vector<std::array<double, 3>>& eulerAngles,
                                  const std::array<double, 3>& translation);
@@ -72,12 +75,14 @@ signals:
     void recordingStarted(const QString &fileName);
     void recordingStopped(const QString &fileName);
     void sendIMUData(const IMU &data);
+    void sendIMUDataKin(const IMU &data);
     void sendJointIndex(int index);
     void startWorker();
 
 private slots:
     void openBoth();
     void openMeshSimulation();
+    void openMeshSimulationKin();
     void closeMeshSimulation();
     void openOpensimSimulation();
     void transmit();
@@ -138,6 +143,7 @@ private:
 
     bool isDarkTheme;
     bool running = false;
+    bool runningKin = false;
     std::ofstream csvFile;
     std::mutex queueMutex;
     std::condition_variable cv;
@@ -146,6 +152,7 @@ private:
     bool isSimulating = false;
     int selectedIMU;
     std::shared_ptr<torch::jit::Module>  model;
+    lbk::BodyKinematics kinematics_model;
     std::unique_ptr<CalibratorBase> calibrator;
     std::map<int, IMU> lastImuData;
     bool meshInitialized = false;
@@ -158,8 +165,10 @@ private:
     int currentOfflineRow = 0;
 
     std::map<std::string, int> selected_imus;
+    std::map<std::string, int> selected_imusKin;
     Eigen::MatrixXf coord_data;
     Eigen::MatrixXf pose_data;
+    Eigen::MatrixXf pose_dataKin;
     Eigen::Matrix3f RMI;
     std::vector<Eigen::Matrix3f> RSB;
     Eigen::MatrixXf acc_offsets;

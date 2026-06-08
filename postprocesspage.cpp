@@ -14,7 +14,7 @@
 #include <vector>
 #include <cmath>
 #include <stdexcept>
-#include <QRegularExpression> // برای parsing CSV اگر لازم
+#include <QRegularExpression>
 QString angleNames[3] = {"Roll", "Pitch", "Yaw"};
 
 PostProcessPage::PostProcessPage(QWidget *parent, bool isDarkTheme)

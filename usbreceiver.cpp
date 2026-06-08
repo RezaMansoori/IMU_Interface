@@ -154,7 +154,7 @@ void USBReceiver::run()
             retry_count = 0;
         }
 
-        msleep(DEFAULT_INTERVAL_MS);
+        msleep(1);
     }
 
     if (m_port) {
