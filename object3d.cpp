@@ -199,7 +199,7 @@ void Object3D::initializeGL()
     glClearColor(35.0f / 255.0f, 37.0f / 255.0f, 38.0f / 255.0f, 1.0f);
     glEnable(GL_DEPTH_TEST);
 
-    loadOBJ("C:/Users/ACER/Documents/Code/IMU_Interfacevfinal_mohandes/IMU_Interfacevfinal/build/Desktop_Qt_6_9_2_MSVC_64_bit-Release/icons/imu-model.obj");
+    loadOBJ("./build/Desktop_Qt_6_9_2_MSVC_64_bit-Release/icons/imu-model.obj");
     createAxes();
 
     modelProgram = new QOpenGLShaderProgram(this);
@@ -328,7 +328,7 @@ void Object3D::paintGL()
     modelMatrix.translate(0.0f, 0.0f, 0.0f);
 
     // چرخش اصلاحی اولیه برای مدل (جبران 90 درجه به چپ حول محور Y)
-    QQuaternion correction = QQuaternion::fromAxisAndAngle(0, 0, 1, -270);
+    QQuaternion correction = QQuaternion::fromAxisAndAngle(0, 0, 1, 0);
     modelMatrix.rotate(correction);
 
     // سپس اعمال چرخش دریافتی از IMU

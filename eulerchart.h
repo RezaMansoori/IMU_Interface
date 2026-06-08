@@ -2,7 +2,7 @@
 #define EULERCHART_H
 
 #include <QWidget>
-#include "imguiplot.h"
+#include "components/imguiplot.h"
 
 class EulerChart : public QWidget
 {

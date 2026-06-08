@@ -14,18 +14,30 @@
 #include <vector>
 #include <cmath>
 #include <stdexcept>
+#include <QRegularExpression> // برای parsing CSV اگر لازم
+QString angleNames[3] = {"Roll", "Pitch", "Yaw"};
 
 PostProcessPage::PostProcessPage(QWidget *parent, bool isDarkTheme)
     : QWidget(parent), isDarkTheme(isDarkTheme), isTrimming(false) {
     QVBoxLayout *layout = new QVBoxLayout(this);
 
+    // Mode selection
+    timeRadio = new QRadioButton("Time Mode", this);
+    xyRadio = new QRadioButton("XY Mode (Joints Angles)", this);
+    modeGroup = new QButtonGroup(this);
+    modeGroup->addButton(timeRadio);
+    modeGroup->addButton(xyRadio);
+    timeRadio->setChecked(true);
+    connect(modeGroup, &QButtonGroup::buttonClicked, this, &PostProcessPage::onModeChanged);
+
+    // File combo (shared, populated based on mode)
     fileCombo = new QComboBox(this);
-    populateFiles();
+    populateFiles(); // Initially for Time mode
     connect(fileCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &PostProcessPage::loadFile);
 
-    fileLabel = new QLabel("No file selected", this);
-
-    QHBoxLayout *selectLayout = new QHBoxLayout;
+    // Wrap time select in widget
+    timeSelectWidget = new QWidget(this);
+    QHBoxLayout *timeSelectLayout = new QHBoxLayout(timeSelectWidget);
     QLabel *imuLabel = new QLabel("IMU:");
     imuCombo = new QComboBox(this);
     for (int i = 1; i <= 18; ++i) {
@@ -37,23 +49,74 @@ PostProcessPage::PostProcessPage(QWidget *parent, bool isDarkTheme)
     for (const auto& p : params) {
         paramCombo->addItem(p);
     }
-    QPushButton *applySelectionBtn = new QPushButton("Apply", this);
-    connect(applySelectionBtn, &QPushButton::clicked, this, [this]() {
+    QPushButton *applyTimeBtn = new QPushButton("Apply", this);
+    connect(applyTimeBtn, &QPushButton::clicked, this, [this]() {
         loadFile(fileCombo->currentIndex());
         updatePlot();
     });
-    selectLayout->addWidget(imuLabel);
-    selectLayout->addWidget(imuCombo);
-    selectLayout->addWidget(paramLabel);
-    selectLayout->addWidget(paramCombo);
-    selectLayout->addWidget(applySelectionBtn);
+    timeSelectLayout->addWidget(imuLabel);
+    timeSelectLayout->addWidget(imuCombo);
+    timeSelectLayout->addWidget(paramLabel);
+    timeSelectLayout->addWidget(paramCombo);
+    timeSelectLayout->addWidget(applyTimeBtn);
+
+    // Wrap XY select in widget (initially hidden)
+    xySelectWidget = new QWidget(this);
+    xySelectWidget->setVisible(false);
+    QHBoxLayout *xySelectLayout = new QHBoxLayout(xySelectWidget);
+    jointNames = {"pelvis", "LHip", "RHip", "SPINE1", "LKNEE", "RKNEE", "SPINE2", "LANCLE", "RANCLE",
+                  "SPINE3", "LFOOT", "RFOOT", "NECK", "LCLAVICLE", "RCLAVICLE", "HEAD",
+                  "LSHOULDER", "RSHOULDER", "LELBOW", "RELBOW", "LWRIST", "RWRIST", "LHAND", "RHAND"};
+    jointXCombo = new QComboBox(this);
+    jointYCombo = new QComboBox(this);
+    for (const auto& name : jointNames) {
+        jointXCombo->addItem(name);
+        jointYCombo->addItem(name);
+    }
+    angleCombo = new QComboBox(this);
+    angleCombo->addItems({"Roll", "Pitch", "Yaw"});
+    applyXYBtn = new QPushButton("Apply", this);
+    connect(applyXYBtn, &QPushButton::clicked, this, [this]() {
+        loadFile(fileCombo->currentIndex());
+        updatePlot();
+    });
+    connect(angleCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+        if (xyMode()) {
+            loadFile(fileCombo->currentIndex());
+            updatePlot();
+        }
+    });
+    xySelectLayout->addWidget(new QLabel("Joint X:", this));
+    xySelectLayout->addWidget(jointXCombo);
+    xySelectLayout->addWidget(new QLabel("Joint Y:", this));
+    xySelectLayout->addWidget(jointYCombo);
+    xySelectLayout->addWidget(new QLabel("Angle:", this));
+    xySelectLayout->addWidget(angleCombo);
+    xySelectLayout->addWidget(applyXYBtn);
+
+    // Add mode radios and selects to layout
+    QHBoxLayout *modeLayout = new QHBoxLayout;
+    modeLayout->addWidget(timeRadio);
+    modeLayout->addWidget(xyRadio);
+    layout->addLayout(modeLayout);
+
+    fileLabel = new QLabel("No file selected", this);
+    layout->addWidget(fileCombo);
+    layout->addWidget(fileLabel);
+    layout->addWidget(timeSelectWidget);
+    layout->addWidget(xySelectWidget);
 
     QHBoxLayout *buttonLayout = new QHBoxLayout;
     trimBtn = new QPushButton("Trim", this);
     connect(trimBtn, &QPushButton::clicked, this, [this]() {
         isTrimming = true;
-        trimmedTimesBackup = currentTimes;
-        trimmedValuesBackup = currentValues;
+        if (xyMode()) {
+            angleXBackup = angleX;
+            angleYBackup = angleY;
+        } else {
+            trimmedTimesBackup = currentTimes;
+            trimmedValuesBackup = currentValues;
+        }
         chartView->setRubberBand(QChartView::RectangleRubberBand);
     });
     QPushButton *undoBtn = new QPushButton("Undo Trim", this); // Renamed for clarity
@@ -111,8 +174,10 @@ PostProcessPage::PostProcessPage(QWidget *parent, bool isDarkTheme)
     chart = new QChart();
     series = new QLineSeries();
     filteredSeries = new QLineSeries(); // اضافه کردن سری فیلترشده
+    movingAverageSeries = new QLineSeries();
     chart->addSeries(series);
     chart->addSeries(filteredSeries); // اضافه کردن سری فیلترشده به نمودار
+    chart->addSeries(movingAverageSeries);
     QValueAxis *axisX = new QValueAxis;
     axisX->setTitleText("Time (s)");
     QValueAxis *axisY = new QValueAxis;
@@ -123,6 +188,31 @@ PostProcessPage::PostProcessPage(QWidget *parent, bool isDarkTheme)
     series->attachAxis(axisY);
     filteredSeries->attachAxis(axisX); // اتصال سری فیلترشده به محورها
     filteredSeries->attachAxis(axisY);
+    movingAverageSeries->attachAxis(axisX);
+    movingAverageSeries->attachAxis(axisY);
+
+    // XY series
+    xySeries = new QLineSeries();
+    xyFilteredSeries = new QLineSeries();
+    xyMovingSeries = new QLineSeries();
+    chart->addSeries(xySeries);
+    chart->addSeries(xyFilteredSeries);
+    chart->addSeries(xyMovingSeries);
+    xySeries->attachAxis(axisX);
+    xySeries->attachAxis(axisY);
+    xyFilteredSeries->attachAxis(axisX);
+    xyFilteredSeries->attachAxis(axisY);
+    xyMovingSeries->attachAxis(axisX);
+    xyMovingSeries->attachAxis(axisY);
+    connect(xySeries, &QLineSeries::hovered, this, &PostProcessPage::handlePointHover);
+    connect(xyFilteredSeries, &QLineSeries::hovered, this, &PostProcessPage::handlePointHover);
+    connect(xyMovingSeries, &QLineSeries::hovered, this, &PostProcessPage::handlePointHover);
+
+    // Hide XY series initially
+    xySeries->setVisible(false);
+    xyFilteredSeries->setVisible(false);
+    xyMovingSeries->setVisible(false);
+
     chartView = new QChartView(chart, this);
     chartView->setRenderHint(QPainter::Antialiasing);
     chartView->setRenderHint(QPainter::Antialiasing);
@@ -152,16 +242,11 @@ PostProcessPage::PostProcessPage(QWidget *parent, bool isDarkTheme)
     movingAverageLayout->addWidget(applyMovingBtn);
     layout->addWidget(movingAverageFrame);
 
-    // سری برای میانگین متحرک
-    movingAverageSeries = new QLineSeries();
-    chart->addSeries(movingAverageSeries);
-    movingAverageSeries->attachAxis(chart->axes(Qt::Horizontal).first());
-    movingAverageSeries->attachAxis(chart->axes(Qt::Vertical).first());
-    connect(movingAverageSeries, &QLineSeries::hovered, this, &PostProcessPage::handlePointHover);
-
     // اتصال سیگنال برای نمایش مختصات هنگام هاور
     connect(series, &QLineSeries::hovered, this, &PostProcessPage::handlePointHover);
     connect(filteredSeries, &QLineSeries::hovered, this, &PostProcessPage::handlePointHover);
+    connect(movingAverageSeries, &QLineSeries::hovered, this, &PostProcessPage::handlePointHover);
+
     chartView->setRubberBand(QChartView::NoRubberBand);
     connect(chartView, &QChartView::rubberBandChanged, this, [this](QRectF rect, QPointF from) {
         if (isTrimming) {
@@ -173,9 +258,6 @@ PostProcessPage::PostProcessPage(QWidget *parent, bool isDarkTheme)
         }
     });
 
-    layout->addWidget(fileCombo);
-    layout->addWidget(fileLabel);
-    layout->addLayout(selectLayout);
     layout->addLayout(buttonLayout);
     layout->addWidget(filterFrame);
     layout->addWidget(chartView);
@@ -188,18 +270,19 @@ PostProcessPage::PostProcessPage(QWidget *parent, bool isDarkTheme)
     };
 
     QPalette tooltipPalette = QToolTip::palette();
-    tooltipPalette.setColor(QPalette::ToolTipText, Qt::black);
-    tooltipPalette.setColor(QPalette::ToolTipBase, isDarkTheme ? QColor("#f5f5f5") : Qt::white);
+    tooltipPalette.setColor(QPalette::ToolTipText, isDarkTheme ? Qt::white : Qt::black);
+    tooltipPalette.setColor(QPalette::ToolTipBase, isDarkTheme ? Qt::darkGray : Qt::white);
     QToolTip::setPalette(tooltipPalette);
-    QApplication::setPalette(tooltipPalette, "QToolTip"); // اطمینان از اعمال پالت در همه حالات
 
     applyTheme();
 }
 
 void PostProcessPage::applyTheme() {
     QString widgetStyle = isDarkTheme ?
-                              "QWidget { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #232526, stop:1 #414345); }" :
-                              "QWidget { background: white; }";
+                              "QWidget { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #232526, stop:1 #414345); }"
+                              "QRadioButton { color: #f8f8f8; }" :
+                              "QWidget { background: white; }"
+                              "QRadioButton { color: black; }";
     QString buttonStyle = isDarkTheme ?
                               "QPushButton { background: #3e3e4e; color: #43cea2; border-radius: 12px; min-height: 38px; font: 16px 'Segoe UI'; }"
                               "QPushButton:pressed { background: #4e4e5e; }"
@@ -226,16 +309,110 @@ void PostProcessPage::applyTheme() {
                               "QSlider::handle:horizontal { background: #43cea2; border: 1px solid #232526; width: 18px; margin: -2px 0; border-radius: 9px; }" :
                               "QSlider::groove:horizontal { border: 1px solid #333; height: 8px; background: #e0e0e0; margin: 2px 0; border-radius: 4px; }"
                               "QSlider::handle:horizontal { background: #333; border: 1px solid #e0e0e0; width: 18px; margin: -2px 0; border-radius: 9px; }";
-    movingAverageBtn->setStyleSheet(buttonStyle);
-    windowSizeSlider->setStyleSheet(sliderStyle);
-    windowSizeValueLabel->setStyleSheet(labelStyle);
-    movingAverageFrame->setStyleSheet(isDarkTheme ? "background: #3e3e4e; border-radius: 5px;" : "background: #f5f5f5; border: 1px solid #333; border-radius: 5px;");
-    //windowSizeLabel->setStyleSheet(labelStyle);
+
+    // Apply to buttons (member ones)
+    trimBtn->setStyleSheet(buttonStyle);
+    filterBtn->setStyleSheet(buttonStyle);
+    applyBtn->setStyleSheet(buttonStyle);
+    saveBtn->setStyleSheet(buttonStyle);
     applyMovingBtn->setStyleSheet(buttonStyle);
-    movingAverageSeries->setColor(isDarkTheme ? QColor("#FF0000") : QColor("#8B0000")); // قرمز برای سری میانگین متحرک
+    movingAverageBtn->setStyleSheet(buttonStyle);
+    undoFilterBtn->setStyleSheet(buttonStyle);
+
+    // Apply to local buttons in constructor (use findChild or make them members; here assuming global covers them, or manual after creation)
+    // If undoBtn and undoMovingAverageBtn are local, add in constructor after creation: undoBtn->setStyleSheet(buttonStyle);
+
+    // Radio buttons are now in widgetStyle (global)
+
+    // Apply to combo boxes
+    fileCombo->setStyleSheet(comboBoxStyle);
+    imuCombo->setStyleSheet(comboBoxStyle);
+    paramCombo->setStyleSheet(comboBoxStyle);
+    typeCombo->setStyleSheet(comboBoxStyle);
+    jointXCombo->setStyleSheet(comboBoxStyle);
+    jointYCombo->setStyleSheet(comboBoxStyle);
+    angleCombo->setStyleSheet(comboBoxStyle);
+
+    // Apply to labels (members)
+    fileLabel->setStyleSheet(labelStyle);
+    cutoffValueLabel->setStyleSheet(labelStyle);
+    orderValueLabel->setStyleSheet(labelStyle);
+    windowSizeValueLabel->setStyleSheet(labelStyle);
+    // For local labels like imuLabel, paramLabel, etc., global labelStyle covers them
+
+    // Apply to line edit
+    titleEdit->setStyleSheet(lineEditStyle);
+
+    // Apply to sliders
+    cutoffSlider->setStyleSheet(sliderStyle);
+    orderSlider->setStyleSheet(sliderStyle);
+    windowSizeSlider->setStyleSheet(sliderStyle);
+
+    // Apply to frames
+    filterFrame->setStyleSheet(isDarkTheme ? "background: #3e3e4e; border-radius: 5px;" : "background: #f5f5f5; border: 1px solid #333; border-radius: 5px;");
+    movingAverageFrame->setStyleSheet(isDarkTheme ? "background: #3e3e4e; border-radius: 5px;" : "background: #f5f5f5; border: 1px solid #333; border-radius: 5px;");
+
+    // Apply to chart series colors
+    movingAverageSeries->setColor(isDarkTheme ? QColor("#FF0000") : QColor("#8B0000"));
+    filteredSeries->setColor(isDarkTheme ? QColor("#00ff00") : QColor("#008000"));
+    series->setColor(isDarkTheme ? QColor("#43cea2") : QColor("#000000"));
+    // For XY series
+    xySeries->setColor(isDarkTheme ? QColor("#43cea2") : QColor("#000000"));
+    xyFilteredSeries->setColor(isDarkTheme ? QColor("#00ff00") : QColor("#008000"));
+    xyMovingSeries->setColor(isDarkTheme ? QColor("#FF0000") : QColor("#8B0000"));
+
+    // Global stylesheet (includes radio button styles now)
     setStyleSheet(widgetStyle + buttonStyle + labelStyle + comboBoxStyle + lineEditStyle + sliderStyle);
 
+    // Apply to chart view
     chartView->setStyleSheet(isDarkTheme ? "background: #3e3e4e; border-radius: 5px;" : "background: #f5f5f5; border: 1px solid #333; border-radius: 5px;");
+}
+
+void PostProcessPage::onModeChanged() {
+    // Clean all data and series to prevent state conflicts/crash on switch
+    originalTimes.clear();
+    currentTimes.clear();
+    originalValues.clear();
+    currentValues.clear();
+    movingAverageValues.clear();
+    angleX.clear();
+    angleY.clear();
+    filteredY.clear();
+    movingY.clear();
+    series->clear();
+    filteredSeries->clear();
+    movingAverageSeries->clear();
+    xySeries->clear();
+    xyFilteredSeries->clear();
+    xyMovingSeries->clear();
+    fs = 500.0; // Reset fs
+
+    // Hide all series initially
+    series->setVisible(false);
+    filteredSeries->setVisible(false);
+    movingAverageSeries->setVisible(false);
+    xySeries->setVisible(false);
+    xyFilteredSeries->setVisible(false);
+    xyMovingSeries->setVisible(false);
+
+    bool isXY = xyMode();
+    timeSelectWidget->setVisible(!isXY);
+    xySelectWidget->setVisible(isXY);
+
+    // Reset defaults for Time mode
+    if (!isXY) {
+        imuCombo->setCurrentIndex(0); // Default IMU 1
+        paramCombo->setCurrentIndex(0); // Default AccX
+    }
+
+    // Same CSV list for both modes
+    populateFiles();
+    if (fileCombo->count() > 0) {
+        int currentIndex = fileCombo->currentIndex();
+        if (currentIndex < 0) currentIndex = 0;
+        loadFile(currentIndex);
+    }
+    updatePlot(); // Refresh chart with cleaned state
 }
 
 void PostProcessPage::startTrimming(QPointF point) {
@@ -313,23 +490,44 @@ void PostProcessPage::populateFiles() {
 
 void PostProcessPage::loadFile(int index) {
     if (index < 0) return;
-    currentFile = "data/" + fileCombo->currentText(); // مسیر کامل برای باز کردن
+    currentFile = "data/" + fileCombo->currentText(); // Path کامل برای هر دو حالت
     fileLabel->setText("Selected File: " + fileCombo->currentText());
 
+    if (xyMode()) {
+        int jx = jointXCombo->currentIndex();
+        int jy = jointYCombo->currentIndex();
+        XYMetric metric = currentXYMetric();
+        loadXYData(jx, jy, metric);
+        calculateFs(); // اگر fs برای XY نیاز باشه (مثلاً بر اساس طول angleX محاسبه کن)
+        // تنظیم اسلایدر cutoff (فرض fs محاسبه‌شده)
+        cutoffSlider->setRange(1, static_cast<int>(fs * 50.0));
+        cutoffSlider->setValue(std::min(cutoffSlider->value(), static_cast<int>(fs * 50.0)));
+        cutoffValueLabel->setText(QString("%1 Hz").arg(cutoffSlider->value() / 100.0, 0, 'f', 2));
+        updatePlot();
+        return;
+    }
+
+    // Time mode (کد اصلی بدون تغییر، از این به بعد)
     currentIMU = imuCombo->currentText().toInt();
     currentParam = paramCombo->currentText();
-
+    // Guard against invalid param (prevents crash if combo not set)
+    if (paramMap.find(currentParam) == paramMap.end()) {
+        currentParam = "AccX"; // Default
+        paramCombo->setCurrentText("AccX");
+    }
+    if (currentIMU < 1 || currentIMU > 18) {
+        currentIMU = 1;
+        imuCombo->setCurrentIndex(0);
+    }
     QFile file(currentFile);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QMessageBox::warning(this, "Error", "Failed to open file: " + currentFile);
         return;
     }
-
     QTextStream in(&file);
     QString header = in.readLine(); // Skip header
     originalTimes.clear();
     originalValues.clear();
-
     while (!in.atEnd()) {
         QString line = in.readLine();
         QStringList parts = line.split(",");
@@ -344,24 +542,60 @@ void PostProcessPage::loadFile(int index) {
         }
     }
     file.close();
-
     // اگر داده‌ای نبود (مثل IMU خاموش)، warning بده
     if (originalTimes.empty()) {
         QMessageBox::information(this, "Info", "No data for selected IMU in this file.");
         return;
     }
-
     currentTimes = originalTimes;
     currentValues = originalValues;
-
     calculateFs();
-
     // محدود کردن اسلایدر cutoff به fs/2
     cutoffSlider->setRange(1, static_cast<int>(fs * 50.0)); // fs/2 * 100 برای اسلایدر
     cutoffSlider->setValue(std::min(cutoffSlider->value(), static_cast<int>(fs * 50.0))); // تنظیم مقدار فعلی
     cutoffValueLabel->setText(QString("%1 Hz").arg(cutoffSlider->value() / 100.0, 0, 'f', 2));
-
     updatePlot();
+}
+
+void PostProcessPage::loadXYData(int jointXIdx, int jointYIdx, XYMetric metric) {
+    angleX.clear();
+    angleY.clear();
+    filteredY.clear();
+    movingY.clear(); // Reset filtered/moving for new selection
+
+    QFile file(currentFile);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, "Error", "Cannot open CSV file.");
+        return;
+    }
+    QTextStream in(&file);
+    in.readLine(); // Skip header
+
+    int colX = 3 * jointXIdx + static_cast<int>(metric);
+    int colY = 3 * jointYIdx + static_cast<int>(metric);
+
+    while (!in.atEnd()) {
+        QString line = in.readLine();
+        QStringList fields = line.split(',');
+        if (fields.size() > std::max(colX, colY)) {
+            bool okX, okY;
+            double vx = fields[colX].toDouble(&okX);
+            double vy = fields[colY].toDouble(&okY);
+            if (okX && okY) {
+                angleX.push_back(vx);
+                angleY.push_back(vy);
+            }
+        }
+    }
+    file.close();
+
+    // Backup for trim (initial)
+    angleXBackup = angleX;
+    angleYBackup = angleY;
+}
+
+QString PostProcessPage::getAngleName(XYMetric metric) const {
+    return angleNames[static_cast<int>(metric)];
 }
 
 void PostProcessPage::calculateFs() {
@@ -379,27 +613,161 @@ void PostProcessPage::calculateFs() {
 }
 
 void PostProcessPage::updatePlot() {
-    if (currentTimes.empty()) return;
+    if (xyMode()) {
+        updateXYPlot();
+        return;
+    }
 
-    series->clear(); // پاک کردن سری اصلی
+    if (currentTimes.empty()) {
+        // Handle no data case (unchanged)
+        series->clear();
+        filteredSeries->clear();
+        movingAverageSeries->clear();
+        chart->setTitle("No data for selected IMU. Please select an appropriate file or IMU.");
+        QValueAxis *axisX = qobject_cast<QValueAxis*>(chart->axes(Qt::Horizontal).first());
+        QValueAxis *axisY = qobject_cast<QValueAxis*>(chart->axes(Qt::Vertical).first());
+        if (axisX) axisX->setRange(0, 1);
+        if (axisY) axisY->setRange(-1, 1);
+        series->setVisible(false);
+        filteredSeries->setVisible(false);
+        movingAverageSeries->setVisible(false);
+        xySeries->setVisible(false);
+        xyFilteredSeries->setVisible(false);
+        xyMovingSeries->setVisible(false);
+        return;
+    }
+
+    // Append original (always)
+    series->clear();
     for (size_t i = 0; i < currentTimes.size(); ++i) {
         series->append(currentTimes[i], currentValues[i]);
     }
 
+    // Re-append filtered if available (from vector to persist after clear/switch)
+    if (!filteredValues.empty()) {
+        filteredSeries->clear();
+        for (size_t i = 0; i < currentTimes.size() && i < filteredValues.size(); ++i) {
+            filteredSeries->append(currentTimes[i], filteredValues[i]);
+        }
+        filteredSeries->setVisible(true);
+    } else {
+        filteredSeries->setVisible(false);
+    }
+
+    // Re-append moving average if available (from vector to persist after clear/switch)
+    if (!movingAverageValues.empty()) {
+        movingAverageSeries->clear();
+        for (size_t i = 0; i < currentTimes.size() && i < movingAverageValues.size(); ++i) {
+            movingAverageSeries->append(currentTimes[i], movingAverageValues[i]);
+        }
+        movingAverageSeries->setVisible(true);
+    } else {
+        movingAverageSeries->setVisible(false);
+    }
+
+    // Range calculation (include all, using vectors for persistence)
     double minT = *std::min_element(currentTimes.begin(), currentTimes.end());
     double maxT = *std::max_element(currentTimes.begin(), currentTimes.end());
-    double minV = std::min(*std::min_element(currentValues.begin(), currentValues.end()),
-                           filteredSeries->points().isEmpty() ? minV : *std::min_element(currentValues.begin(), currentValues.end(),
-                                                                                         [](double a, double b) { return a < b; }));
-    double maxV = std::max(*std::max_element(currentValues.begin(), currentValues.end()),
-                           filteredSeries->points().isEmpty() ? maxV : *std::max_element(currentValues.begin(), currentValues.end(),
-                                                                                         [](double a, double b) { return a > b; }));
+    double minV = *std::min_element(currentValues.begin(), currentValues.end());
+    double maxV = *std::max_element(currentValues.begin(), currentValues.end());
+
+    // Include filtered from vector
+    if (!filteredValues.empty()) {
+        double fMin = *std::min_element(filteredValues.begin(), filteredValues.end());
+        double fMax = *std::max_element(filteredValues.begin(), filteredValues.end());
+        minV = std::min(minV, fMin);
+        maxV = std::max(maxV, fMax);
+    }
+
+    // Include moving average from vector
+    if (!movingAverageValues.empty()) {
+        double maMin = *std::min_element(movingAverageValues.begin(), movingAverageValues.end());
+        double maMax = *std::max_element(movingAverageValues.begin(), movingAverageValues.end());
+        minV = std::min(minV, maMin);
+        maxV = std::max(maxV, maMax);
+    }
 
     chart->setTitle(titleEdit->text().isEmpty() ? (currentParam + " for IMU " + QString::number(currentIMU)) : titleEdit->text());
     QValueAxis *axisX = qobject_cast<QValueAxis*>(chart->axes(Qt::Horizontal).first());
     QValueAxis *axisY = qobject_cast<QValueAxis*>(chart->axes(Qt::Vertical).first());
     axisX->setRange(minT, maxT);
     axisY->setRange(minV - 0.1 * (maxV - minV), maxV + 0.1 * (maxV - minV));
+
+    // Hide XY series in time mode
+    xySeries->setVisible(false);
+    xyFilteredSeries->setVisible(false);
+    xyMovingSeries->setVisible(false);
+
+    // Show time series (original always visible)
+    series->setVisible(true);
+}
+
+void PostProcessPage::updateXYPlot() {
+    if (angleX.empty() || angleY.size() != angleX.size()) return;
+
+    QString angleName = getAngleName(currentXYMetric());
+    QString jxName = jointNames[jointXCombo->currentIndex()];
+    QString jyName = jointNames[jointYCombo->currentIndex()];
+    QString title = titleEdit->text().isEmpty() ? QString("%1 (%2) vs %3 (%4)").arg(angleName, jxName, jyName, angleName) : titleEdit->text();
+    chart->setTitle(title);
+
+    QValueAxis *axisX = qobject_cast<QValueAxis*>(chart->axes(Qt::Horizontal).first());
+    QValueAxis *axisY = qobject_cast<QValueAxis*>(chart->axes(Qt::Vertical).first());
+    axisX->setTitleText(QString("%1 %2").arg(jxName, angleName));
+    axisY->setTitleText(QString("%1 %2").arg(jyName, angleName));
+
+    // Original
+    xySeries->clear();
+    for (size_t i = 0; i < angleX.size(); ++i) {
+        xySeries->append(angleX[i], angleY[i]);
+    }
+    xySeries->setVisible(true);
+
+    // Filtered (if applied)
+    xyFilteredSeries->clear();
+    if (!filteredY.empty()) {
+        for (size_t i = 0; i < angleX.size(); ++i) {
+            xyFilteredSeries->append(angleX[i], filteredY[i]);
+        }
+        xyFilteredSeries->setVisible(true);
+    } else {
+        xyFilteredSeries->setVisible(false);
+    }
+
+    // Moving average (on Y)
+    xyMovingSeries->clear();
+    if (!movingY.empty()) {
+        for (size_t i = 0; i < angleX.size(); ++i) {
+            xyMovingSeries->append(angleX[i], movingY[i]);
+        }
+        xyMovingSeries->setVisible(true);
+    } else {
+        xyMovingSeries->setVisible(false);
+    }
+
+    // Hide time series
+    series->setVisible(false);
+    filteredSeries->setVisible(false);
+    movingAverageSeries->setVisible(false);
+
+    // Auto range
+    double minX = *std::min_element(angleX.begin(), angleX.end());
+    double maxX = *std::max_element(angleX.begin(), angleX.end());
+    double minY = *std::min_element(angleY.begin(), angleY.end());
+    double maxY = *std::max_element(angleY.begin(), angleY.end());
+    // Include filtered/moving if visible
+    if (!filteredY.empty()) {
+        minY = std::min(minY, *std::min_element(filteredY.begin(), filteredY.end()));
+        maxY = std::max(maxY, *std::max_element(filteredY.begin(), filteredY.end()));
+    }
+    if (!movingY.empty()) {
+        minY = std::min(minY, *std::min_element(movingY.begin(), movingY.end()));
+        maxY = std::max(maxY, *std::max_element(movingY.begin(), movingY.end()));
+    }
+    double marginX = (maxX - minX) * 0.05;
+    double marginY = (maxY - minY) * 0.05;
+    axisX->setRange(minX - marginX, maxX + marginX);
+    axisY->setRange(minY - marginY, maxY + marginY);
 }
 
 void PostProcessPage::trimData() {
@@ -433,6 +801,9 @@ void PostProcessPage::toggleFilterFrame() {
 }
 
 void PostProcessPage::applyFilter() {
+    if (xyMode()) {
+        return; // فیلتر فقط برای Time mode
+    }
     if (currentValues.empty()) {
         return;
     }
@@ -446,13 +817,9 @@ void PostProcessPage::applyFilter() {
     int order = orderSlider->value();
     bool highpass = typeCombo->currentText() == "High Pass";
 
-    std::vector<double> filteredValues;
-    if (typeCombo->currentText() == "Low Pass") {
-        filteredValues = applyButterworthFilter(currentValues, cutoff, order, fs, false);
-    } else {
-        filteredValues = applyButterworthFilter(currentValues, cutoff, order, fs, true);
-    }
+    filteredValues = applyButterworthFilter(currentValues, cutoff, order, fs, highpass); // ست vector
 
+    // Append به series (مثل اولیه)
     filteredSeries->clear();
     for (size_t i = 0; i < currentTimes.size() && i < filteredValues.size(); ++i) {
         filteredSeries->append(currentTimes[i], filteredValues[i]);
@@ -477,9 +844,13 @@ void PostProcessPage::applyFilter() {
     if (!currentTimes.empty()) {
         axisX->setRange(currentTimes.front(), currentTimes.back());
     }
+
+    updatePlot(); // Refresh to show all series together (original + filtered)
 }
 
 void PostProcessPage::updateCutoff(int value) {
+    if (xyMode()) return; // فقط Time mode
+
     double cutoff = value / 100.0; // Convert to Hz
     if (cutoff > fs / 2.0) {
         cutoffSlider->setValue(static_cast<int>(fs * 50.0)); // تنظیم به حداکثر مجاز
@@ -491,6 +862,8 @@ void PostProcessPage::updateCutoff(int value) {
 }
 
 void PostProcessPage::updateOrder(int value) {
+    if (xyMode()) return; // فقط Time mode
+
     orderValueLabel->setText(QString("%1").arg(value));
     applyFilter(); // Update the plot in real-time
 }
@@ -725,39 +1098,32 @@ void PostProcessPage::toggleMovingAverageFrame() {
 }
 
 void PostProcessPage::applyMovingAverage() {
+    if (xyMode()) {
+        return; // Moving average فقط برای Time mode
+    }
     if (currentValues.empty()) {
         return;
     }
 
     int windowSize = windowSizeSlider->value();
-    movingAverageValues = calculateMovingAverage(currentValues, windowSize);
-
-    movingAverageSeries->clear();
-    for (size_t i = 0; i < currentTimes.size() && i < movingAverageValues.size(); ++i) {
-        movingAverageSeries->append(currentTimes[i], movingAverageValues[i]);
-    }
+    movingAverageValues = calculateMovingAverage(currentValues, windowSize); // Set vector for persistence
 
     QString title = titleEdit->text().isEmpty() ? QString("%1 (IMU %2)").arg(currentParam).arg(currentIMU) : titleEdit->text();
     chart->setTitle(title);
 
-    QValueAxis *axisY = qobject_cast<QValueAxis*>(chart->axes(Qt::Vertical).first());
-    double minY = *std::min_element(movingAverageValues.begin(), movingAverageValues.end());
-    double maxY = *std::max_element(movingAverageValues.begin(), movingAverageValues.end());
-    double minYOrig = *std::min_element(currentValues.begin(), currentValues.end());
-    double maxYOrig = *std::max_element(currentValues.begin(), currentValues.end());
-    minY = std::min({minY, minYOrig, filteredSeries->points().isEmpty() ? minY : filteredSeries->points().first().y()});
-    maxY = std::max({maxY, maxYOrig, filteredSeries->points().isEmpty() ? maxY : filteredSeries->points().last().y()});
-    double margin = (maxY - minY) * 0.1;
-    axisY->setRange(minY - margin, maxY + margin);
+    updatePlot(); // Refresh to append and show all series (original + filtered + moving)
 }
 
 void PostProcessPage::updateWindowSize(int value) {
+    if (xyMode()) return;
     windowSizeValueLabel->setText(QString("%1").arg(value));
     applyMovingAverage(); // به‌روزرسانی بلادرنگ
 }
 
 void PostProcessPage::undoMovingAverage() {
-    movingAverageSeries->clear(); // پاک کردن سری میانگین متحرک
+    if (xyMode()) return; // فقط Time mode
+    movingAverageSeries->clear();
+    movingAverageValues.clear(); // Clear vector to persist
     updatePlot(); // به‌روزرسانی نمودار
 }
 
@@ -789,6 +1155,8 @@ void PostProcessPage::handlePointHover(const QPointF &point, bool state) {
 }
 
 void PostProcessPage::undoFilter() {
-    filteredSeries->clear(); // Clear the filtered series data
+    if (xyMode()) return; // فقط Time mode
+    filteredSeries->clear();
+    filteredValues.clear(); // Clear vector to persist
     updatePlot(); // Update the plot to reflect the change
 }

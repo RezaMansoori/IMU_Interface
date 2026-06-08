@@ -1,5 +1,6 @@
 #include "ProcessingWorker.h"
 #include <QDebug>
+#include <chrono>
 
 ProcessingWorker::ProcessingWorker(std::shared_ptr<torch::jit::script::Module> model,
                                    SMPLModel* smplModel,
@@ -94,9 +95,22 @@ void ProcessingWorker::processIMUData(const IMU &data) {
         return;
     }
 
+    const auto slotStartUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                                 std::chrono::steady_clock::now().time_since_epoch())
+                                 .count();
+    const qint64 queueLatencyUs = data.hostEmitTimeUs > 0 ? (slotStartUs - data.hostEmitTimeUs) : -1;
+    qDebug().noquote() << QString("processIMUData: imu=%1 queueLatencyUs=%2 buffered=%3")
+                              .arg(data.id)
+                              .arg(queueLatencyUs)
+                              .arg(lastImuData_.size() + 1);
+
     lastImuData_[data.id] = data;
 
     if (lastImuData_.size() < 6) return;
+
+    const auto batchStartUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                                  std::chrono::steady_clock::now().time_since_epoch())
+                                  .count();
 
     Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> acc(6, 3);
     std::vector<Eigen::Matrix3f> rot(6);
@@ -119,10 +133,10 @@ void ProcessingWorker::processIMUData(const IMU &data) {
     // کالیبراسیون
     Eigen::MatrixXf acc_cal;
     std::vector<Eigen::Matrix3f> ori_cal;
-    if (!calibrator_) {
-        qWarning() << "No calibrator set in ProcessingWorker!";
-        return;
-    }
+    // if (!calibrator_) {
+    //     qWarning() << "No calibrator set in ProcessingWorker!";
+    //     return;
+    // }
     calibrator_->calibrate(acc, rot, acc_cal, ori_cal);
 
     auto options = torch::TensorOptions().dtype(torch::kFloat32);
@@ -135,13 +149,28 @@ void ProcessingWorker::processIMUData(const IMU &data) {
 
     // ori_cal → tensor
     std::vector<torch::Tensor> rot_tensors;
-    rot_tensors.reserve(rot.size());
-    for (auto &M : rot) {
-        rot_tensors.push_back(
-            torch::from_blob(const_cast<float*>(M.data()), {3, 3}, options).clone().transpose(0, 1).contiguous()
-            );
+    rot_tensors.reserve(ori_cal.size());
+    for (auto &M : ori_cal) {
+        // Copy matrix elements explicitly to avoid column/row major confusion
+        torch::Tensor mat = torch::zeros({3, 3}, options);
+        auto accessor = mat.accessor<float, 2>();
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                accessor[i][j] = M(i, j);
+            }
+        }
+        rot_tensors.push_back(mat);
     }
     torch::Tensor calibRot = torch::stack(rot_tensors, 0); // [6,3,3]
+    
+    // Debug: Print calibrated values to check for abnormalities
+    // qDebug() << "calibAcc stats - min:" << calibAcc.min().item<float>()
+    //          << "max:" << calibAcc.max().item<float>()
+    //          << "mean:" << calibAcc.mean().item<float>();
+    // qDebug() << "calibRot[0] determinant:" << torch::det(calibRot[0]).item<float>();
+    
+    //torch::Tensor calibRot = torch::eye(3, torch::kFloat32).unsqueeze(0).repeat({6, 1, 1});
+    //torch::Tensor calibAcc = torch::eye(3, torch::kFloat32).unsqueeze(0).repeat({6, 1, 1});
 
     try {
         torch::NoGradGuard no_grad;
@@ -154,6 +183,12 @@ void ProcessingWorker::processIMUData(const IMU &data) {
             trans = out->elements()[1].toTensor(); // [1,3]
         else
             trans = torch::zeros({1,3}, options);
+        // debugTensor(pose[0][0],"Pelvis Tensor: ");
+        // pose[0][0][0][0] = 1.0f;
+        // pose[0][0][1][1] = 1.0f;
+        // pose[0][0][2][2] = 1.0f;
+        // debugTensor(pose[0][0],"Pelvis Tensor EYE: ");
+
         // pose[0][18] = pose[0][18].transpose(0,1).clone();
         // pose[0][19] = pose[0][19].transpose(0,1).clone();
         // ماتریس جابجایی X <-> Z
@@ -179,7 +214,13 @@ void ProcessingWorker::processIMUData(const IMU &data) {
         // pose[0][17] = torch::eye(3, torch::TensorOptions().dtype(torch::kFloat32));
         // pose[0][18] = torch::eye(3, torch::TensorOptions().dtype(torch::kFloat32));
         // pose[0][19] = torch::eye(3, torch::TensorOptions().dtype(torch::kFloat32));
-
+        // debugTensor(pose[0][13], "pose13: ");
+        // debugTensor(pose[0][14], "pose14: ");
+        // debugTensor(pose[0][15], "pose15: ");
+        // debugTensor(pose[0][16], "pose16: ");
+        // debugTensor(pose[0][17], "pose17: ");
+        // debugTensor(pose[0][18], "pose18: ");
+        // debugTensor(pose[0][19], "pose19: ");
 
         std::vector<torch::Tensor> p_pose_list = {pose};
         std::vector<torch::Tensor> p_trans_list = {trans};
@@ -265,6 +306,13 @@ void ProcessingWorker::processIMUData(const IMU &data) {
             emit eulerDataUpdated(euler[0], euler[1], euler[2]);
         } catch (...) {
         }
+
+        const auto batchEndUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                                    std::chrono::steady_clock::now().time_since_epoch())
+                                    .count();
+        qDebug().noquote() << QString("processIMUData: batchProcessingUs=%1 totalSlotUs=%2")
+                                  .arg(batchEndUs - batchStartUs)
+                                  .arg(batchEndUs - slotStartUs);
 
     } catch (const std::exception &e) {
         qWarning() << "ProcessingWorker exception:" << e.what();

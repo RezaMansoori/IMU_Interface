@@ -133,29 +133,10 @@ void NposeCalibrator::calibrate(const Eigen::MatrixXf& acc,
         ori_cal[i] = RMI * rot[i];
     }
 
-    torch::Tensor result = torch::zeros({6, 3, 3}, torch::kFloat32);
-    for (int i = 0; i < 6; ++i) {
-        round_matrix(ori_cal[i], 4);
-        round_matrix(RSB[i], 4);
-        for (int j = 0; j < 3; ++j) {
-            for (int k = 0; k < 3; ++k) {
-                float sum = 0.0;
-                for (int l = 0; l < 3; ++l) {
-                    sum += ori_cal[i](j, l) * RSB[i](l, k);
-                }
-                result[i][j][k] = sum;
-            }
-        }
-    }
-
-    for (int i = 0; i < 6; ++i) {
-        Eigen::Matrix3f tmp_result;
-        for (int j = 0; j < 3; ++j) {
-            for (int k = 0; k < 3; ++k) {
-                tmp_result(j, k) = result[i][j][k].item<float>();
-            }
-        }
-        ori_cal[i] = tmp_result;
+    // Apply RSB transformation: ori_cal[i] = ori_cal[i] * RSB[i]
+    // RSB has 6 elements (one per IMU), so we use the size of RSB
+    for (size_t i = 0; i < RSB.size() && i < ori_cal.size(); ++i) {
+        ori_cal[i] = ori_cal[i] * RSB[i];
     }
 
     acc_cal = acc_cal - acc_offsets;
@@ -170,10 +151,10 @@ std::vector<Eigen::Matrix3f> NposeCalibrator::quat_batch_to_rotmats(const torch:
     out.reserve(N);
     for (int i = 0; i < N; ++i) {
         Eigen::Vector4f q;
-        q << data[4*i + 1], // x
-             data[4*i + 2], // y
-             data[4*i + 3], // z
-             data[4*i + 0]; // w
+        q << data[4*i + 0], // x
+             data[4*i + 1], // y
+             data[4*i + 2], // z
+             data[4*i + 3]; // w
         out.push_back(quat_to_rotmat(q));
     }
     return out;

@@ -54,6 +54,7 @@ class ImGuiPlot : public QOpenGLWidget, protected QOpenGLExtraFunctions {
   float mouse_wheelH;  // mouse horizontal wheel
 
   int m_plotCount = 4;
+  int joint_num;
 };
 
 #endif  // IMGUIPLOT_H

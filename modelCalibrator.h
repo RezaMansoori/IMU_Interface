@@ -14,10 +14,11 @@
 #include <map>
 #include <string>
 #include "calibratorBase.h"
+#include "calibrator_utils.h"
 
 Eigen::Matrix3f quat_to_rotmat(const Eigen::Vector4f& q);
 Eigen::Matrix3f quat_to_rotmat_XYZ(const Eigen::Vector4f& q);
-std::vector<Eigen::Matrix3f> quat_batch_to_rotmat(const Eigen::MatrixXf& quats);
+// std::vector<Eigen::Matrix3f> quat_batch_to_rotmat(const Eigen::MatrixXf& quats);
 #ifndef MATMUL_EIGEN_BATCH_H
 #define MATMUL_EIGEN_BATCH_H
 
